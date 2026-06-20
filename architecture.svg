@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">AI Front Desk architecture</title>
+  <desc id="desc">Layered architecture for the AI Front Desk offline service store operations agent.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#172554"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#93c5fd"/>
+    </marker>
+    <style>
+      .label { font: 600 22px 'Segoe UI', sans-serif; fill: #f8fafc; }
+      .small { font: 400 16px 'Segoe UI', sans-serif; fill: #cbd5e1; }
+      .eyebrow { font: 700 14px 'Segoe UI', sans-serif; letter-spacing: 2px; fill: #93c5fd; }
+      .box { fill: url(#card); stroke: #475569; stroke-width: 2; rx: 18; }
+      .accent { fill: #38bdf8; }
+      .line { stroke: #93c5fd; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <text x="72" y="72" class="eyebrow">AI FRONT DESK / SYSTEM MAP</text>
+  <text x="72" y="116" class="label" style="font-size:36px">线下服务门店智能运营 Agent</text>
+  <text x="72" y="148" class="small">自然语言入口 → 专业 Agent 协作 → 可执行的门店运营动作</text>
+
+  <rect x="72" y="210" width="1056" height="92" class="box"/>
+  <circle cx="112" cy="256" r="13" class="accent"/>
+  <text x="144" y="250" class="label">Web / Application Layer</text>
+  <text x="144" y="278" class="small">对话入口、运营页面、流式响应与管理视图</text>
+
+  <line x1="600" y1="302" x2="600" y2="342" class="line"/>
+  <rect x="72" y="342" width="1056" height="92" class="box"/>
+  <circle cx="112" cy="388" r="13" class="accent"/>
+  <text x="144" y="382" class="label">API Layer</text>
+  <text x="144" y="410" class="small">咨询、预约、知识库、排班与客户行为接口</text>
+
+  <line x1="600" y1="434" x2="600" y2="474" class="line"/>
+  <rect x="72" y="474" width="1056" height="104" class="box"/>
+  <circle cx="112" cy="526" r="13" class="accent"/>
+  <text x="144" y="512" class="label">Agents Layer</text>
+  <text x="144" y="542" class="small">Task Classification · Consultation · Appointment · User Behavior</text>
+
+  <line x1="600" y1="578" x2="600" y2="618" class="line"/>
+  <rect x="72" y="618" width="1056" height="62" class="box"/>
+  <text x="108" y="656" class="label" style="font-size:20px">Services / Repository / SQLite + FAISS</text>
+  <text x="780" y="656" class="small">业务规则 · 数据访问 · 向量检索</text>
+</svg>
