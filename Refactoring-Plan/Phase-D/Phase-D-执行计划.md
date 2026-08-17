@@ -667,3 +667,31 @@ Phase E 不应重新定义会话事件协议或预约核心状态机，而应在
 - A-R2、A-R3 的最终状态；
 - 本地、Fake、真实模型、线上、鉴权、多进程验证边界；
 - 提交记录、未提交改动处理和 Phase E 交接事项。
+
+## 10. Phase D 执行结果
+
+### D0 基线、交接和引用盘点（2026-08-17）
+
+**工作区门禁**：
+- 分支 `dev`；未提交改动 = Phase-D 计划文档（用户补充的 0.5 两个决策），已单独提交 `Phase D(docs)-补充执行决策`（c7d42d3）。
+- Phase D 后续提交不与计划文档混入。
+
+**基线测试（重新执行）**：
+- 首次全量：**1 failed** —— `test_same_slot_two_users_only_one_wins`（并发确认）偶发失败，定位为 **Phase C 遗留真实 bug**：
+  - SQLAlchemy 2.0 的 sqlite 方言自行管理事务（`do_begin` 按 `_isolation_lookup` 发 BEGIN），此前 `run_in_immediate_transaction` 的 `dbapi.isolation_level` 设置与 `connect_args` 均被方言覆盖，**BEGIN IMMEDIATE 从未真正生效**（实际为 deferred/autocommit），并发确认存在 lost update 窗口（两个确认可同时成功）。
+  - 修复：自定义方言 `db/base/immediate_dialect.py`（`sqlite+immediate` URL），覆盖 `do_begin` 恒发 `BEGIN IMMEDIATE`；WAL 设置改用 dbapi 层执行（避免被 IMMEDIATE 事务包裹）。并发测试连跑 10/10 通过。
+  - 提交：`Phase D(fix)-SQLite事务IMMEDIATE生效`（6ad6520）。
+
+**修复后基线**：**124 passed, 10 skipped, 0 failed**（40 warnings：既有 DeprecationWarning/MovedIn20Warning）。
+
+**引用盘点**：
+| 项 | 数量/位置 |
+|---|---|
+| `[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 旧协议字符串 | 41 处（agents/ 各 processor 的 yield 标记） |
+| `busy_periods_dict` | 弃用保留（config/constants.py），无新写入 |
+| 旧兼容层引用（local_db/旧 Router） | 5 文件：pattern_analyzer、user_behavior_agent、api/user_behavior_analysis、db/db_router、db/__init__（集中在 user_behavior 组件，A-R2 相关） |
+| `print()` | 0（Phase A 已清零） |
+| 旧 API | `/api/task/classify`、`/api/consultation/ask`（A-R3，需统一） |
+| 预约 Agent 互调 | `TaskClassificationAgent` 内 `AgentRouter` 回调链（D2 拆解对象） |
+
+**D0 结论**：基线可复现；D1 文件范围 = application/ 新契约模型 + api/core/errors.py + 对应契约测试；回滚点 = 6ad6520（修复后基线）。
