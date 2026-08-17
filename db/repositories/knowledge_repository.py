@@ -339,6 +339,30 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             
             return {category: count for category, count in result}
 
+    # ---------------- 语料元信息（Phase F F3） ----------------
+
+    def get_meta(self, key: str, default=None):
+        """读取知识语料元信息键值。"""
+        from ..models import KnowledgeMeta
+        with self.session_manager.session_scope() as session:
+            row = session.query(KnowledgeMeta).filter(
+                KnowledgeMeta.key == key
+            ).first()
+            return row.value if row else default
+
+    def set_meta(self, key: str, value) -> None:
+        """写入/更新知识语料元信息键值。"""
+        from ..models import KnowledgeMeta, datetime as _dt
+        with self.session_manager.session_scope() as session:
+            row = session.query(KnowledgeMeta).filter(
+                KnowledgeMeta.key == key
+            ).first()
+            if row is None:
+                session.add(KnowledgeMeta(key=key, value=value))
+            else:
+                row.value = value
+                row.updated_at = _dt.utcnow()
+
     def _document_to_dict(self, document: KnowledgeDocument) -> Dict[str, Any]:
         """将文档对象转换为字典（Phase F：含治理字段，不含敏感/内部嵌入外的公开字段）"""
         return {

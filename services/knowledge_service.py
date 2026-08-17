@@ -140,6 +140,44 @@ class KnowledgeService:
             except Exception as e:
                 logger.error(f"添加默认知识失败: {e}")
 
+    def _assemble_candidate(self, documents) -> Optional[Tuple]:
+        """从文档字典列表构建 FAISS 候选（不交换快照、不落库）。
+
+        任何 Embedding 失败/空集返回 None 由调用方决定；返回 (index, doc_ids)。
+        """
+        embeddings = []
+        doc_ids = []
+        for doc in documents:
+            emb = doc.get('embedding')
+            if not emb:
+                # 缺向量时即时生成（不持久化，避免构建失败残留半成品）
+                text_for_embedding = f"{doc['content']} {' '.join(doc.get('keywords', []))}"
+                emb = embed_input(text_for_embedding)
+            embeddings.append(emb)
+            doc_ids.append(int(doc['id']))
+        if not embeddings:
+            return None
+        embeddings_array = np.array(embeddings).astype('float32')
+        dimension = embeddings_array.shape[1]
+        index = faiss.IndexFlatIP(dimension)  # 内积相似度
+        index.add(embeddings_array)
+        return index, doc_ids
+
+    def swap_candidate(self, candidate) -> str:
+        """原子替换快照为候选：查询要么读旧快照要么读新快照，绝不读中间状态。"""
+        index, doc_ids = candidate
+        with self._lock:
+            self._index_version += 1
+            version = self._index_version
+            self.index = index
+            self.document_ids = doc_ids
+            self._snapshot = (index, tuple(doc_ids), version)
+        return f"index-{version}"
+
+    def get_source_version(self) -> str:
+        with self._lock:
+            return f"index-{self._index_version}"
+
     async def _build_vector_index(self):
         """构建向量索引（E6 快照原子替换；F1：只从 published 文档构建，草稿不入正式检索）"""
         try:
@@ -149,46 +187,19 @@ class KnowledgeService:
                 with self._lock:
                     self._snapshot = None
                     self.document_ids = []
-                return
-
-            embeddings = []
-            doc_ids = []
-
-            for doc in documents:
-                if doc.get('embedding'):
-                    embeddings.append(doc['embedding'])
-                    doc_ids.append(doc['id'])
-                else:
-                    # 如果没有嵌入向量，生成一个
-                    logger.warning(f"文档 {doc['id']} 缺少嵌入向量，正在生成...")
-                    text_for_embedding = f"{doc['content']} {' '.join(doc.get('keywords', []))}"
-                    embedding = embed_input(text_for_embedding)
-
-                    # 更新数据库
-                    self.db.update_document(doc['id'], embedding=embedding)
-
-                    embeddings.append(embedding)
-                    doc_ids.append(doc['id'])
-
-            if embeddings:
-                # 创建FAISS索引
-                embeddings_array = np.array(embeddings).astype('float32')
-                dimension = embeddings_array.shape[1]
-                index = faiss.IndexFlatIP(dimension)  # 内积相似度
-                index.add(embeddings_array)
-
-                # 原子替换快照（查询要么读旧快照，要么读新快照，绝不读中间状态）
-                with self._lock:
-                    self._index_version += 1
-                    self.index = index
-                    self.document_ids = doc_ids
-                    self._snapshot = (index, tuple(doc_ids), self._index_version)
-                logger.info(
-                    f"构建向量索引完成，包含 {len(embeddings)} 个向量，version={self._index_version}"
-                )
-            else:
+                return None
+            candidate = self._assemble_candidate(documents)
+            if candidate is None:
                 logger.warning("没有有效的嵌入向量，无法构建索引")
-
+                with self._lock:
+                    self._snapshot = None
+                    self.document_ids = []
+                return None
+            source_version = self.swap_candidate(candidate)
+            logger.info(
+                f"构建向量索引完成，包含 {len(candidate[1])} 个向量，source_version={source_version}"
+            )
+            return source_version
         except Exception as e:
             logger.error(f"构建向量索引失败: {e}")
             # E6：失败时保留旧快照（若有），不破坏正在服务的查询

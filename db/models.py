@@ -160,6 +160,14 @@ class KnowledgeDocument(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = Column(Integer, default=1)  # 软删除标记
 
+
+class KnowledgeMeta(Base):
+    """知识语料元信息（Phase F F3）：跨重启持久化语料版本等键值。"""
+    __tablename__ = 'knowledge_meta'
+    key = Column(String, primary_key=True)
+    value = Column(JSON, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class UserBehavior(Base):
     __tablename__ = 'user_behaviors'
     id = Column(Integer, primary_key=True)

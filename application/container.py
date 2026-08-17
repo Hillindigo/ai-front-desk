@@ -80,10 +80,12 @@ class Container:
         from services.summary_service import SummaryService
         from services.knowledge_service import KnowledgeService
         from services.knowledge_management import KnowledgeManagementService
+        from services.knowledge_publish import KnowledgePublishService
 
-        # Phase F F2：容器唯一持有单一 KnowledgeService（管理/咨询共享同一索引实例）
+        # Phase F F2/F3：容器唯一持有单一 KnowledgeService（管理/咨询/发布共享同一索引实例）
         self.knowledge_service = KnowledgeService(self.db_path)
         self.knowledge_management = KnowledgeManagementService(self.knowledge_service)
+        self.knowledge_publish = KnowledgePublishService(self.knowledge_service)
 
         self.summary_repository = SummaryRepository(self.db_router.session_manager)
         self.context_builder = ContextBuilder(
