@@ -2,7 +2,7 @@
 
 > 计划版本：2026-08-17
 >
-> 文档状态：执行中（E0 已完成，2026-08-17）
+> 文档状态：已完成（E0-E9 全部执行，2026-08-17）
 >
 > 所属项目：`AIFrontDesk`
 >
@@ -700,4 +700,69 @@ Phase F 不应重新实现会话摘要、偏好删除或预约事实保护，而
 - [x] 旧偏好不会误当作新可信记忆（legacy_unverified 降级路径已定）；
 - [x] 没有把 Phase F 的知识库后台混入 Phase E（E6 仅最小封口）。
 
-以下小节在 E1-E9 实际执行后继续填写。
+### E1-E9 执行结果（2026-08-17 完成）
+
+**最终测试基线**：**281 passed, 10 skipped, 0 failed, 84 warnings**（Fake 模式零真实 LLM/Embedding，临时 sqlite）。10 个 skip 仍为 user_behavior 组件（A-R2 延期，原因不变），与 Phase D 记录一致。
+
+**提交记录（Phase E，9 个 commit）**：
+
+```
+Phase E(docs)-记录E0基线
+Phase E(feat)-定义记忆与证据契约
+Phase E(feat)-新增ContextBuilder
+Phase E(feat)-实现会话摘要
+Phase E(feat)-收敛客户偏好
+Phase E(refactor)-接入统一上下文
+Phase E(fix)-加固知识检索边界
+Phase E(feat)-补充前端记忆交互
+Phase E(test)-验证上下文恢复与删除
+Phase E(docs)-记录PhaseE执行结果     （本提交）
+```
+
+**各 E 阶段完成对照**：
+
+| 阶段 | 关键产物 | 验收证据 |
+|---|---|---|
+| E1 契约 | context_contracts.py（ContextPackage/ContextBudget/SummarySnapshot/PreferenceRecord/PreferenceTombstone/RetrievedEvidence/TokenEstimator） | test_context_contracts.py 38 项：空输入/预算/来源可信度/覆盖语义/墓碑/证据阈值 |
+| E2 ContextBuilder | context_builder.py（只读读取器 + 固定优先级 + 逆优先级确定性裁剪 + clean_token 清洗） | test_context_builder.py 12 项：强制保留、预算裁剪顺序、双防线、无副作用 |
+| E3 摘要 | conversation_summaries 表 + summary_repository + summary_service（触发/版本/校验/回退/重启恢复） | test_summary_service.py 12 项：覆盖连续性、旧版保留、失败保留、屏蔽、invalidate 联动 |
+| E4 偏好 | preferences + preference_tombstones 表 + preference_service + 偏好 API + identity + 旧组件适配 | test_preference_service.py 16 项：覆盖语义、隔离、墓碑删除、legacy 迁移、API/身份校验 |
+| E5 接入 | context_readers.py + Orchestrator 接入 ContextBuilder/偏好路由/摘要旁路 | test_orchestrator_context.py 9 项：装配调用、偏好路由、旁路不阻断、长会话摘要端到端 |
+| E6 检索封口 | knowledge_service 阈值/候选边界/索引快照原子替换/关键词预过滤/结构化输出 | test_knowledge_service.py 12 项：阈值、重建版本、删除失效、预过滤、Embedding 故障注入 |
+| E7 前端 | index.html 记忆反馈可视化（memory-feedback 高亮）+ 状态恢复 | test_frontend_interaction.py 5 项：SSE 文案、幂等、断线恢复 |
+| E8 验收 | test_phase_e_acceptance.py（并发摘要 + HTTP 事件序列） | 4 项 + 全量回归 281/10/0 |
+
+**数据模型（新增表）**：
+
+| 表 | 用途 |
+|---|---|
+| `conversation_summaries` | 会话摘要快照（active/invalidated/failed；version；覆盖 from/to_sequence） |
+| `preferences` | 长期偏好事实来源（source/confidence/last_confirmed_at/is_active/deleted_at） |
+| `preference_tombstones` | 偏好删除墓碑（防旧缓存/旧摘要/并发读取重新激活） |
+
+**迁移与兼容**：
+- 旧 `user_preferences` 数据通过 `PreferenceRepository.migrate_legacy()` 一次性迁移为 `preferences` 表 `legacy_unverified` 记录（**默认不注入**，直到用户重新确认 `reconfirm_legacy`）；旧表保留不动（约束 9）。
+- 旧 `UserBehaviorRepository` 构造注入 `preference_repository` 后，`update_user_preference`/`get_user_preferences` 收敛到新表（不建立第二套事实）；`PreferenceLegacyAdapter` 提供兼容入口。
+- 偏好类型 `preference_type` 沿用旧枚举 technician/time/service/duration，统一为新 `PreferenceTypeEnum`。
+
+**删除语义（决策三实现）**：`atomic_delete` 单事务完成：偏好置 inactive + 写墓碑 + 该用户所有 active 摘要标记 invalidated + 来源/记忆引用消息 metadata 写入 `context_excluded` 屏蔽；`ContextBuilder`/`SummaryService` 每轮读取时排除 inactive 偏好、invalidated 摘要与被屏蔽消息。
+
+**身份与边界**：`IdentityResolver` 抽象 + `DemoIdentityResolver`（本地演示适配器：请求体 user_id 只作兼容字段，必须与 `default_user` 一致，否则 403）；后续鉴权只替换 resolver。
+
+**环境与验证边界（如实记录，不冒充生产）**：
+- 已验证：SQLite 单进程 + Fake 模式本地自动化与 HTTP 验收（turns SSE 事件序列、偏好管理接口、并发摘要、断线/重试幂等）。
+- **未验证**：真实模型摘要质量、线上延迟、生产鉴权、多进程/多租户、知识库运营与索引刷新、摘要人工评测——均不标记为完成。
+
+**风险闭环核对**：摘要遗漏预约关键事实（key_facts 结构化校验）✅；覆盖空洞/重复（sequence + continuity 校验）✅；摘要失败阻断（旁路 + 降级路径）✅；历史偏好来源不明（legacy_unverified 不注入）✅；删除后仍被摘要/缓存恢复（墓碑+失效+屏蔽）✅；用户串读（user_id 隔离 + resolver）✅；ContextBuilder 隐式编排（只读无副作用）✅；索引重建读到半成品（快照原子替换）✅；偏好与预约事务耦合（旁路不回滚）✅。
+
+**Phase F 交接项（已形成清单）**：
+- ContextPackage/ContextBudget/SummarySnapshot/RetrievedEvidence 最终契约；
+- 摘要/偏好/墓碑表字段、索引、迁移与删除记录；
+- 知识阈值（默认 0.5）、关键词预过滤、引用字段、索引版本（source_version）与重建并发边界（快照原子替换）；
+- 未完成项：真实模型摘要质量与人工评测、线上/鉴权、多租户、知识库运营（文档管理/索引刷新/相关度评测/引用展示/无依据回答治理）。
+
+Phase F 应在 Phase E 的上下文与证据边界上建设知识库治理，不重复实现会话摘要、偏好删除或预约事实保护。
+
+#### 第 10 节各 E 阶段详细结果
+
+以下按项目惯例在各阶段执行时填充具体测试命令、故障注入证据与 HTTP 验收输出；上文已汇总最终基线与完成对照。

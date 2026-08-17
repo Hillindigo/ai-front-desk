@@ -140,6 +140,26 @@ event: run_completed    data: {"conversation_id":"...","message_id":"...","inten
 - 内部 `[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 标记不进入事件流（隐藏推理不外泄）。
 - 失败以唯一 `run_failed` 终止，不中途切换为未定义 JSON；错误码稳定（`INVALID_INPUT`、`CONVERSATION_NOT_FOUND`、`APPOINTMENT_CONFLICT`、`IDEMPOTENCY_CONFLICT`、`MODEL_UNAVAILABLE`、`TOOL_FAILED`、`INTERNAL_ERROR` 等）。
 
+### 偏好管理 API（Phase E）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/preferences` | 查看当前用户偏好（含 `legacy_unverified` 标记，不提升可信度） |
+| PUT | `/api/v1/preferences/{preference_type}` | 覆盖写入（单 active 值语义，PUT 替换而非追加） |
+| DELETE | `/api/v1/preferences/{preference_type}` | 删除（幂等成功；墓碑 + 摘要失效 + 来源消息屏蔽） |
+
+- `preference_type`：`technician` / `time` / `service` / `duration`。
+- 身份边界：请求体 `user_id` 只作兼容字段，必须与服务端解析身份（`default_user`）一致，否则 403；真实鉴权替换 `IdentityResolver`。
+- 对话中"请记住我偏好的…"明确表达会经确定性规则写入偏好，并返回用户可见反馈文案（本地演示边界）。
+
+### Phase E 上下文能力
+
+- **统一上下文**：`ContextBuilder` 按固定优先级组合当前输入 / 预约事实 / 偏好 / 摘要 / 最近消息 / 知识证据，并按 Token 预算确定性裁剪；当前输入、活跃预约与待确认动作永不裁剪。
+- **会话摘要**：按消息序号覆盖、版本递增、失败保留旧摘要与原始消息；服务重启可从数据库恢复。
+- **长期偏好**：来源明确、可管理；删除后下一轮立即不再使用（墓碑 + 摘要失效 + 消息屏蔽）。
+- **知识证据**：检索结果须超过阈值（默认 `0.5`）并带文档 ID / 分数 / 索引版本；索引以不可变快照原子替换，重建不会与查询交换半成品。
+- 验证边界：当前在 SQLite 单进程 + Fake 模式验证；真实模型摘要质量、线上、鉴权、多进程与知识库运营留待后续阶段。
+
 ### 预约 API（Phase C）
 
 | 方法 | 路径 | 说明 |

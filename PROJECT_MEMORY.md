@@ -38,6 +38,8 @@ AI Front Desk 是一个面向线下服务门店的本地优先 FastAPI 原型，
 Refactoring-Plan/Phase-A/
 Refactoring-Plan/Phase-B/
 Refactoring-Plan/Phase-C/
+Refactoring-Plan/Phase-D/
+Refactoring-Plan/Phase-E/
 ```
 
 本文件只保留跨阶段长期有效的项目规则；具体阶段文档必须记录实际状态、验证结果和遗留问题。
@@ -80,6 +82,10 @@ Repositories / Database
 7. 数据库层同时存在 Repository、Router 和兼容层（`TechnicianDBRouter` 仅剩 A-R2 user_behavior 组件使用），后续需要按阶段删除重复入口，不能只叠加新层。
 8. 知识库索引仍由进程内服务管理，知识变更会触发重建；后续先解决可靠性和验证边界，不直接引入超出当前规模的复杂基础设施。
 9. 内部技术字段仍使用 `technician`，产品文案优先使用“服务人员”；除非阶段计划明确迁移，不要随意修改数据库字段命名。
+10. 统一上下文（Phase E）：`application/context_builder.py` 的 `ContextBuilder` 是唯一上下文装配器（只读、无副作用、固定优先级预算裁剪）；数据来自只读读取器（`application/context_readers.py`）；`ContextPackage.model_input()` 只输出允许公开字段，审计字段不泄漏到模型输入。
+11. 会话摘要与偏好（Phase E）：`conversation_summaries`（按消息 sequence 覆盖、active/invalidated/failed、版本递增）；`preferences` + `preference_tombstones`（同一 user_id+type 单 active 覆盖语义）。删除偏好 = 单事务：停用偏好 + 写墓碑 + 该用户摘要失效 + 来源消息 metadata 置 `context_excluded` 屏蔽。旧 `user_preferences` 经 `migrate_legacy()` 迁移为 `legacy_unverified`（默认不注入，重新确认才提升）。
+12. 身份边界（Phase E）：`application/identity.py` 的 `IdentityResolver` 抽象 + `DemoIdentityResolver`（本地演示固定 `default_user`，请求体 user_id 只作兼容字段必须一致）。偏好 API `/api/v1/preferences` 走此边界；后续真实鉴权只替换 resolver。
+13. 知识检索（Phase E）：`KnowledgeService` 设 `min_score`（默认 0.5）阈值、候选边界、关键词预过滤；索引以 (index, doc_ids, version) 快照原子替换，`source_version` 随重建递增，旧结果不作当前证据；`search_structured()` 输出结构化证据供上下文。
 
 ## 4. 重构目标和长期原则
 
@@ -113,6 +119,8 @@ Refactoring-Plan/
 ├── Phase-A/                     # Phase A 计划、执行记录、验证材料
 ├── Phase-B/                     # Phase B 计划、执行记录、验证材料
 ├── Phase-C/
+├── Phase-D/
+├── Phase-E/
 └── ...
 ```
 
