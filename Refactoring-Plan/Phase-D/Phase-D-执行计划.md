@@ -698,8 +698,9 @@ Phase E 不应重新定义会话事件协议或预约核心状态机，而应在
 
 **D1~D9 执行结果（2026-08-17 完成）**：
 
-- **测试最终基线：170 passed, 10 skipped, 0 failed**（40 warnings：既有 DeprecationWarning/MovedIn20Warning），Fake 模式零真实 LLM/Embedding。
-- **提交记录（Phase D，11 个 commit）**：
+- **首次验收发现并修复**：前端仍按旧标记渲染、工具事件缺失、预约领域错误被当作 `run_completed`、`client_request_id` 未去重；修复提交为 `d4ec6e0`。
+- **测试最终基线：173 passed, 10 skipped, 0 failed**（40 warnings：既有 DeprecationWarning/MovedIn20Warning），Fake 模式零真实 LLM/Embedding。
+- **提交记录（Phase D，12 个 commit）**：
 
 ```
 Phase D(fix)-SQLite事务IMMEDIATE生效     （D0 基线 bug 修复，单独 commit）
@@ -713,6 +714,7 @@ Phase D(fix)-统一错误和行为记录
 Phase D(refactor)-删除重复兼容入口
 Phase D(test)-验证编排协议和故障恢复
 Phase D(docs)-记录PhaseD执行结果         （本提交）
+Phase D(fix)-修复事件与重试边界
 ```
 
 - **完成定义核对**：
@@ -729,17 +731,20 @@ Phase D(docs)-记录PhaseD执行结果         （本提交）
 - [x] A-R3 收口：`/api/task/classify`（确定性规则）、`/api/consultation/ask`（统一咨询路径）修复为 200
 - [x] `/chat` 删除；`/chat/stream` 保留薄转发；`KnowledgeDBRouter`/`UserBehaviorDBRouter`/`local_db.py` 物理删除（0 引用）；`TechnicianDBRouter` 保留（A-R2 user_behavior 组件依赖，标记弃用）
 - [x] 前端切换事件解析（SSE 解析器 + run_failed 错误展示 + localStorage 会话保持）
+- [x] 前端按纯用户可见文本渲染 SSE 增量，不再依赖旧 `[THOUGHT]`/`[REPLY]` 正则
 
 测试完成：
-- [x] Phase B/C 测试无回归（170 passed 含 B/C 全部）
+- [x] Phase B/C 测试无回归（173 passed 含 B/C 全部）
 - [x] 事件顺序/唯一 terminal/失败/客户端断开/run_id 透传测试通过（D4/D8）
+- [x] `tool_started`/`tool_result` 已发出；预约领域错误映射为结构化 `run_failed`
+- [x] 同一 `client_request_id` 重试复用原 assistant 结果，内容不一致时返回 `IDEMPOTENCY_CONFLICT`
 - [x] 预约冲突、幂等、状态机仍通过 Phase C 测试
 - [x] 会话隔离、重启恢复、并发仍通过 Phase B 测试
 - [x] 行为记录失败、模型失败、工具失败、分类失败故障注入证据齐备（D6/D8）
 - [x] 10 个 skip 仍为 user_behavior 组件（A-R2 延期，原因不变）
 
 运行和文档：
-- [x] Fake 模式启动 + SSE HTTP 验收通过（事件序列 run_started→intent_detected→workflow_started→assistant_delta→run_completed）
+- [x] Fake 模式启动 + SSE HTTP 验收通过（事件序列 run_started→intent_detected→workflow_started→tool_started→assistant_delta→tool_result→run_completed）
 - [x] README / PROJECT_MEMORY.md / 本文件已同步
 - [x] `git diff --check` 通过
 - [x] 阶段提交未混入工作区无关改动
