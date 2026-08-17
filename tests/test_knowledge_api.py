@@ -130,3 +130,32 @@ class TestRefreshAPI:
 
         rebuild = client.post("/api/v1/knowledge/refresh")
         assert rebuild.status_code == 200
+
+
+class TestSources:
+    def test_sources接口有依据与无依据(self, client):
+        # 有依据：咨询问题命中知识
+        cid1 = client.post("/api/v1/conversations", json={"user_id": "default_user"}).json()["conversation_id"]
+        with client.stream("POST", f"/api/v1/conversations/{cid1}/turns",
+                           json={"message": "门店营业时间是几点？"}):
+            pass
+        r1 = client.get(f"/api/v1/conversations/{cid1}/sources")
+        assert r1.status_code == 200
+        b1 = r1.json()
+        assert "has_evidence" in b1 and "evidence" in b1
+        # 证据条目安全：只含 document_id/category/snippet/score/source_version，绝不伪造来源内容
+        for e in b1["evidence"]:
+            assert "document_id" in e and "snippet" in e and "score" in e and "source_version" in e
+            assert "prompt" not in str(e).lower() and "embedding" not in str(e).lower()
+        # 无关/无依据：不应展示伪造来源
+        cid2 = client.post("/api/v1/conversations", json={"user_id": "default_user"}).json()["conversation_id"]
+        with client.stream("POST", f"/api/v1/conversations/{cid2}/turns",
+                           json={"message": "帮我预约明天的项目"}):
+            pass
+        r2 = client.get(f"/api/v1/conversations/{cid2}/sources")
+        assert r2.status_code == 200
+        b2 = r2.json()
+        assert "has_evidence" in b2
+        # 无论是否命中，都不应返回任何伪造/Prompt 字段
+        assert "prompt" not in str(b2).lower()
+        assert "embedding" not in str(b2).lower()

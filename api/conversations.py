@@ -8,6 +8,7 @@ URL 中的 conversation_id 是会话主标识；服务端校验会话存在与�
 """
 
 from typing import Optional
+import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -56,6 +57,47 @@ def create_conversation(request: CreateConversationRequest):
         "user_id": session.user_id,
         "channel": session.channel,
         "status": session.status,
+    }
+
+
+@router.get("/{conversation_id}/sources")
+def conversation_sources(conversation_id: str, user_id: str = "default_user"):
+    """最近一条 assistant 消息的回答依据（F6：来源卡片/无依据提示）。
+
+    证据来自 assistant 消息 metadata（F5 写入）；无证据时 has_evidence=false，
+    前端不得伪造来源。断线/刷新可据此从服务端恢复依据状态。
+    """
+    _resolve_session(conversation_id, user_id)
+    repo = get_container().db_router.conversations
+    messages = repo.get_recent_messages(conversation_id, limit=50)
+    last_evidence = []
+    message_id = None
+    for m in reversed(messages or []):
+        if m.get("role") != "assistant":
+            continue
+        meta = m.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except (ValueError, TypeError):
+                meta = {}
+        last_evidence = meta.get("evidence") or []
+        message_id = m.get("id")
+        break
+    return {
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "has_evidence": bool(last_evidence),
+        "evidence": [
+            {
+                "document_id": e.get("document_id"),
+                "category": e.get("category", ""),
+                "snippet": e.get("snippet", ""),
+                "score": e.get("score", 0.0),
+                "source_version": e.get("source_version", ""),
+            }
+            for e in last_evidence
+        ],
     }
 
 

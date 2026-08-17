@@ -527,7 +527,22 @@
         
         <!-- 知识管理标签页 -->
         <div id="manage" class="tab-content">
-            <h3>📝 所有知识</h3>
+            <div class="search-section">
+                <h3>📝 知识生命周期管理</h3>
+                <p style="color:#666;font-size:13px;">状态：草稿(可编辑/预览/发布) · 已发布(正式检索依据) · 失败(可重试) · 已归档(非新检索依据)</p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                    <select id="manageStatusFilter" class="form-control" style="max-width:180px;" onchange="loadManageList()">
+                        <option value="">全部状态</option>
+                        <option value="draft">草稿</option>
+                        <option value="published">已发布</option>
+                        <option value="failed">失败</option>
+                        <option value="archived">已归档</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="loadManageList()">🔄 刷新列表</button>
+                    <button class="btn btn-secondary" onclick="refreshIndexStatus()">📡 刷新状态/重建索引</button>
+                    <span id="refreshStatusBadge" style="font-size:13px;color:#666;"></span>
+                </div>
+            </div>
             <div id="knowledgeList" class="loading">加载中...</div>
         </div>
         
@@ -585,10 +600,13 @@
     <script>
         let knowledgeData = [];
         let categories = [];
+        let manageData = [];
         
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadKnowledgeData();
+            loadManageList();
+            refreshIndexStatus();
             
             // 绑定表单提交事件
             document.getElementById('addKnowledgeForm').addEventListener('submit', handleAddKnowledge);
@@ -663,38 +681,119 @@
             overview.innerHTML = html;
         }
         
-        // 渲染知识列表
+        // 渲染知识列表（F6：状态驱动 + 生命周期操作）
         function renderKnowledgeList() {
-            const list = document.getElementById('knowledgeList');
-            
-            if (knowledgeData.length === 0) {
-                list.innerHTML = '<div class="loading">暂无知识数据</div>';
-                return;
-            }
-            
-            const html = knowledgeData.map(doc => `
-                <div class="knowledge-item">
-                    <div class="knowledge-content">${doc.content}</div>
-                    <div class="knowledge-meta">
-                        <span>ID: ${doc.id}</span>
-                        <span class="category-badge">${doc.category || '未分类'}</span>
-                        <span>创建: ${new Date(doc.created_at).toLocaleString()}</span>
-                        <span>更新: ${new Date(doc.updated_at).toLocaleString()}</span>
-                    </div>
-                    ${doc.keywords && doc.keywords.length > 0 ? `
-                        <div style="margin-top: 8px;">
-                            ${doc.keywords.map(keyword => `<span class="keywords-tag">${keyword}</span>`).join('')}
-                        </div>
-                    ` : ''}
-                    <div class="knowledge-actions">
-                        <button class="btn btn-primary" onclick="editKnowledge(${doc.id})">✏️ 编辑</button>
-                        <button class="btn btn-danger" onclick="deleteKnowledge(${doc.id})">🗑️ 删除</button>
-                    </div>
-                </div>
-            `).join('');
-            
-            list.innerHTML = `<div class="knowledge-list">${html}</div>`;
+            // 已由 loadManageList 渲染 v1 数据；此函数仅为兼容旧调用保留
         }
+
+        const STATUS_META = {
+            draft: {label: '草稿', cls: '#f59e0b'},
+            published: {label: '已发布', cls: '#10b981'},
+            failed: {label: '失败', cls: '#ef4444'},
+            archived: {label: '已归档', cls: '#9ca3af'},
+        };
+
+        async function loadManageList() {
+            const status = document.getElementById('manageStatusFilter').value;
+            const list = document.getElementById('knowledgeList');
+            list.innerHTML = '<div class="loading">加载中...</div>';
+            try {
+                const url = `/api/v1/knowledge/documents?page_size=200${status ? '&status=' + status : ''}`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                if (!resp.ok) { list.innerHTML = `<div class="alert alert-error">加载失败：${JSON.stringify(data.detail || data)}</div>`; return; }
+                const items = data.items || [];
+                manageData = items;
+                if (items.length === 0) { list.innerHTML = '<div class="loading">暂无该状态的知识</div>'; return; }
+                const html = items.map(doc => {
+                    const meta = STATUS_META[doc.status] || {label: doc.status || '未知', cls: '#6b7280'};
+                    const isDraft = doc.status === 'draft';
+                    const isFailed = doc.status === 'failed';
+                    const isPublished = doc.status === 'published';
+                    const isArchived = doc.status === 'archived';
+                    let actions = '';
+                    if (isDraft || isFailed) {
+                        actions += `<button class="btn btn-primary" onclick="previewDoc(${doc.document_id})">👁 预览</button>`;
+                        actions += `<button class="btn btn-success" onclick="publishDoc(${doc.document_id})">🚀 发布</button>`;
+                    }
+                    if (isPublished) actions += `<button class="btn btn-danger" onclick="archiveDoc(${doc.document_id})">📦 归档</button>`;
+                    if (isArchived) actions += `<button class="btn btn-secondary" onclick="restoreDoc(${doc.document_id})">♻️ 恢复</button>`;
+                    if (isDraft || isFailed) actions += `<button class="btn btn-secondary" onclick="editKnowledge(${doc.document_id})">✏️ 编辑</button>`;
+                    actions += `<button class="btn btn-danger" onclick="deleteKnowledge(${doc.document_id})">🗑 删除</button>`;
+                    return `
+                        <div class="knowledge-item">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                                <span class="category-badge">${doc.category || '未分类'}</span>
+                                <span style="background:${meta.cls};color:#fff;padding:2px 10px;border-radius:12px;font-size:12px;">${meta.label}</span>
+                                <span style="font-size:12px;color:#666;">v${doc.document_version || 1}</span>
+                                ${doc.knowledge_version ? `<span style="font-size:12px;color:#666;">知识库 v${doc.knowledge_version}</span>` : ''}
+                            </div>
+                            <div class="knowledge-content">${doc.title || doc.content.slice(0,50)}</div>
+                            <div class="knowledge-meta">
+                                <span>ID: ${doc.document_id}</span>
+                                ${doc.source_label ? `<span>${doc.source_label}</span>` : ''}
+                                ${doc.published_at ? `<span>发布: ${new Date(doc.published_at).toLocaleString()}</span>` : ''}
+                                ${doc.updated_at ? `<span>更新: ${new Date(doc.updated_at).toLocaleString()}</span>` : ''}
+                            </div>
+                            ${doc.keywords && doc.keywords.length ? `<div>${doc.keywords.map(k => `<span class="keywords-tag">${k}</span>`).join('')}</div>` : ''}
+                            <div class="knowledge-actions">${actions}</div>
+                        </div>`;
+                }).join('');
+                list.innerHTML = `<div class="knowledge-list">${html}</div>`;
+            } catch (e) {
+                list.innerHTML = `<div class="alert alert-error">加载失败：${e}</div>`;
+            }
+        }
+
+        async function publishDoc(id) {
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}/publish`, {method: 'POST'});
+            const data = await resp.json();
+            if (!resp.ok) { alert('发布失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
+            else { alert('✅ 发布成功 版本 v' + data.document_version + '（知识库 v' + data.knowledge_version + '）'); }
+            loadManageList();
+        }
+
+        async function archiveDoc(id) {
+            if (!confirm('确定归档该知识？归档后不再作为新的回答依据。')) return;
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}/archive`, {method: 'POST'});
+            const data = await resp.json();
+            if (!resp.ok) { alert('归档失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
+            else { alert('✅ 已归档'); }
+            loadManageList();
+        }
+
+        async function restoreDoc(id) {
+            // 恢复 = 更新接口将已归档转草稿（复用 PUT，不改内容）
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}`, {
+                method: 'PUT', headers: {'Content-Type': 'application/json'}, body: '{}',
+            });
+            const data = await resp.json();
+            if (!resp.ok) { alert('恢复失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
+            else { alert('✅ 已恢复为草稿'); }
+            loadManageList();
+        }
+
+        async function previewDoc(id) {
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}/preview`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query: prompt('输入用于预览检索的查询词：', ''), top_k: 3}),
+            });
+            const data = await resp.json();
+            if (!resp.ok) { alert('预览失败：' + (data.detail?.message || JSON.stringify(data.detail))); return; }
+            const rows = data.results || [];
+            alert('预览检索命中 ' + rows.length + ' 条\n\n' + rows.map((r, i) => `${i+1}. [${r.status}] ${(r.snippet||'').slice(0,60)}`).join('\n'));
+        }
+
+        async function refreshIndexStatus() {
+            const badge = document.getElementById('refreshStatusBadge');
+            try {
+                const resp = await fetch('/api/v1/knowledge/refresh');
+                const data = await resp.json();
+                badge.textContent = `索引状态: ${data.status} · 知识库 v${data.knowledge_version} · ${data.source_version}${data.multi_process ? '' : '（单进程）'}`;
+                if (data.error) badge.textContent += ` · 上次失败: ${data.error}`;
+            } catch (e) { badge.textContent = '刷新状态获取失败'; }
+        }
+
         
         // 更新分类选择框
         function updateCategorySelects() {
@@ -854,13 +953,13 @@
             document.getElementById('addAlert').innerHTML = '';
         }
         
-        // 编辑知识
+        // 编辑知识（F6：从 manage 列表取数据）
         function editKnowledge(id) {
-            const doc = knowledgeData.find(d => d.id === id);
+            const doc = manageData.find(d => d.document_id === id) || knowledgeData.find(d => d.id === id);
             if (!doc) return;
             
             document.getElementById('editId').value = id;
-            document.getElementById('editContent').value = doc.content;
+            document.getElementById('editContent').value = doc.content || '';
             document.getElementById('editCategory').value = doc.category || '';
             document.getElementById('editKeywords').value = (doc.keywords || []).join(', ');
             document.getElementById('editAlert').innerHTML = '';
@@ -885,7 +984,7 @@
             const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
             
             try {
-                const response = await fetch(`/api/knowledge/${id}`, {
+                const response = await fetch(`/api/v1/knowledge/documents/${id}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -904,9 +1003,10 @@
                     setTimeout(() => {
                         closeEditModal();
                         loadKnowledgeData();
+                        loadManageList();
                     }, 1000);
                 } else {
-                    showAlert(result.message || '更新失败', 'error', 'editAlert');
+                    showAlert((result.detail && result.detail.message) || '更新失败', 'error', 'editAlert');
                 }
                 
             } catch (error) {

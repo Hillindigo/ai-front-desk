@@ -583,6 +583,34 @@
         }
     }
 
+    // F6：渲染最近一条回答的"来源卡片"或"无依据提示"（从服务端读取，不伪造来源）
+    async function loadTurnSources(convId) {
+        if (!lastBotBubble) return;
+        try {
+            const res = await fetch(`/api/v1/conversations/${convId}/sources`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const msgEl = lastBotBubble.closest('.message');
+            if (!msgEl) return;
+            // 移除旧的来源区块
+            const old = msgEl.querySelector('.answer-sources');
+            if (old) old.remove();
+            let html;
+            if (data.has_evidence) {
+                const ev = data.evidence || [];
+                html = `<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;font-size:12px;color:#374151;">
+                    <div style="font-weight:600;color:#15803d;">📚 回答依据（${ev.length}）</div>
+                    ${ev.map((e,i)=>`<div style="margin-top:4px;">来源${i+1}·${e.category||'门店知识'}：${(e.snippet||'').slice(0,80)}</div>`).join('')}
+                    </div>`;
+            } else {
+                html = `<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:#78350f;">
+                    ⚠️ 当前无足够可靠的门店依据，以上仅为参考，请以门店现场/工作人员信息为准。
+                    </div>`;
+            }
+            msgEl.insertAdjacentHTML('beforeend', html);
+        } catch (e) { /* 来源加载失败不阻断对话 */ }
+    }
+
     chatForm.onsubmit = async function(e) {
         e.preventDefault();
         const text = userInput.value.trim();
@@ -669,7 +697,8 @@
                     botMsg += '\n[错误] ' + (data.message || '处理失败，请稍后再试');
                     updateLastBotMessage(botMsg);
                 } else if (eventName === 'run_completed') {
-                    // 本轮完成：无需额外处理
+                    // 本轮完成：渲染回答依据/无依据提示（从服务端读取，不伪造来源）
+                    loadTurnSources(conversationId);
                 }
             });
             updateLastBotMessage(botMsg);
