@@ -51,3 +51,19 @@ def _fake_llm_env(monkeypatch):
     FakeChatModel.calls.clear()
     yield
     FakeChatModel.calls.clear()
+
+
+@pytest.fixture(autouse=True)
+def _clean_appointment_tables():
+    """每个测试前清空预约/事件表（Phase C：session 级临时库避免数据残留干扰）。"""
+    from sqlalchemy import text
+
+    from db.db_router import DatabaseRouter
+
+    router = DatabaseRouter()
+    with router.session_manager.engine.connect() as conn:
+        conn.execute(text("DELETE FROM appointment_events"))
+        conn.execute(text("DELETE FROM appointments"))
+        conn.commit()
+    router.close()
+    yield
