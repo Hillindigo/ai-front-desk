@@ -5,6 +5,8 @@
 """
 
 from typing import Dict, Any, List
+import logging
+logger = logging.getLogger(__name__)
 
 
 class MessageBuilder:
@@ -68,7 +70,7 @@ class MessageBuilder:
                         return f"\n机器人：{generated_msg}\n"
                 
             except Exception as e:
-                print(f"LLM生成推荐消息失败: {e}")
+                logger.error(f"LLM生成推荐消息失败: {e}")
         
         # 如果LLM失败，使用默认消息
         return (f"\nAI Front Desk：抱歉，{original_tech['name']}在{start_time}这个时间段不空闲。"
@@ -94,7 +96,7 @@ class MessageBuilder:
                     if generated_msg:
                         return f"\n机器人：{generated_msg}\n"
             except Exception as e:
-                print(f"LLM生成拒绝消息失败: {e}")
+                logger.error(f"LLM生成拒绝消息失败: {e}")
         
         # 默认消息
         return "\nAI Front Desk：好的，我理解您的选择。您可以选择其他时间段，或者我可以为您重新推荐其他服务人员。请问您还有其他需要吗？\n"

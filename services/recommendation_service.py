@@ -116,7 +116,7 @@ class RecommendationService:
 
 # 测试用的手动运行函数
 if __name__ == "__main__":
-    print("启动推荐调度器测试...")
+    logger.info("启动推荐调度器测试...")
     service = RecommendationService()
     service.start_scheduler()
     
@@ -124,6 +124,6 @@ if __name__ == "__main__":
         # 运行10分钟用于测试
         time.sleep(600)
     except KeyboardInterrupt:
-        print("收到中断信号，停止调度器...")
+        logger.info("收到中断信号，停止调度器...")
     finally:
         service.stop_scheduler()

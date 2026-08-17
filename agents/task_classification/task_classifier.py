@@ -13,8 +13,10 @@
 """
 
 from langchain.prompts import PromptTemplate
+import logging
 from langchain_core.language_models.chat_models import BaseChatModel
 from typing import Dict, Any
+logger = logging.getLogger(__name__)
 
 
 class TaskClassifier:
@@ -73,7 +75,7 @@ class TaskClassifier:
             return category
             
         except Exception as e:
-            print(f"任务分类失败: {str(e)}")
+            logger.error(f"任务分类失败: {str(e)}")
             return 'other'  # 发生错误时默认归类为其他
     
     def get_category_description(self, category: str) -> str:

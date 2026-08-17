@@ -1,5 +1,7 @@
 import uuid
+import logging
 from config.model_provider import create_chat_model
+logger = logging.getLogger(__name__)
 from .consultant import (
     KnowledgeRetriever,
     ConsultationClassifier,
@@ -44,7 +46,7 @@ class ConsultantAgent:
     async def __aenter__(self):
         """异步上下文管理器入口"""
         await self.knowledge_retriever.initialize()
-        print("咨询机器人已启动（数据库RAG模式）")
+        logger.info("咨询机器人已启动（数据库RAG模式）")
         return self
 
     async def __aexit__(self, exc_type, exc, tb):

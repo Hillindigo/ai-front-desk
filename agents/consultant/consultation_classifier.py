@@ -5,6 +5,8 @@
 """
 
 from langchain_core.language_models.chat_models import BaseChatModel
+import logging
+logger = logging.getLogger(__name__)
 from .prompt_builder import PromptBuilder
 
 
@@ -23,6 +25,6 @@ class ConsultationClassifier:
             result = response.content.strip().upper()
             return result == "YES"
         except Exception as e:
-            print(f"分类判断出错：{e}")
+            logger.error(f"分类判断出错：{e}")
             # 如果分类出错，默认认为是相关的，避免误判
             return True

@@ -5,6 +5,8 @@
 """
 
 from typing import AsyncGenerator, Dict, Any
+import logging
+logger = logging.getLogger(__name__)
 from .knowledge_retriever import KnowledgeRetriever
 from .consultation_classifier import ConsultationClassifier
 from .response_generator import ResponseGenerator
@@ -79,4 +81,4 @@ class ConsultationProcessor:
             )
             
         except Exception as behavior_error:
-            print(f"记录咨询行为失败：{behavior_error}")
+            logger.error(f"记录咨询行为失败：{behavior_error}")
