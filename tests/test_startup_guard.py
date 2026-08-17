@@ -8,10 +8,10 @@ from fastapi.testclient import TestClient
 
 def test_app_starts_without_model_credentials(monkeypatch):
     """无真实模型 key（qwen 空 key）时应用可启动，聊天返回稳定错误。"""
-    # 清掉可能被其他测试缓存的 fake task_agent（惰性单例）
+    # 清掉可能被其他测试缓存的会话管理器（惰性单例）
     from api import chat_handler
 
-    chat_handler.reset_task_agent()
+    chat_handler.reset_session_manager()
 
     monkeypatch.setenv("MODEL_PROVIDER", "qwen")
     monkeypatch.setenv("LLM_API_KEY", "")

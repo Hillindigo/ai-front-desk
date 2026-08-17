@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 import uuid
-from langchain_core.chat_history import InMemoryChatMessageHistory
+from application.message_buffer import ChatHistoryBuffer
 from config.model_provider import create_chat_model
 from .appointment import (
     InputParser, 
@@ -56,11 +56,11 @@ class AppointmentAgent:
         """初始化通用聊天模型"""
         return create_chat_model(temperature=0)
 
-    def _get_chat_history(self, session_id: str) -> InMemoryChatMessageHistory:
-        """获取或创建会话历史记录"""
+    def _get_chat_history(self, session_id: str) -> ChatHistoryBuffer:
+        """获取或创建会话历史记录（自管消息列表，Phase B 替代 LangChain 历史）"""
         chat_history = self.chats_by_session_id.get(session_id)
         if chat_history is None:
-            chat_history = InMemoryChatMessageHistory()
+            chat_history = ChatHistoryBuffer()
             self.chats_by_session_id[session_id] = chat_history
         return chat_history
     

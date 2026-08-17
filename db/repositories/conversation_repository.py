@@ -81,6 +81,27 @@ class ConversationRepository:
             session.refresh(conv)
             return _conversation_to_dict(conv)
 
+    def get_default_conversation(self, user_id: str = "default_user") -> Optional[Dict[str, Any]]:
+        """获取该用户的默认演示会话（最早创建的 active web 会话），没有则 None。
+
+        供 /chat/stream 兼容包装使用（无 conversation_id 时落到默认会话）。
+        """
+        with self.session_manager.session_scope() as session:
+            conv = (
+                session.query(Conversation)
+                .filter(
+                    Conversation.user_id == user_id,
+                    Conversation.status == "active",
+                    Conversation.channel == "web",
+                )
+                .order_by(Conversation.created_at.asc())
+                .first()
+            )
+            if conv is None:
+                return None
+            session.refresh(conv)
+            return _conversation_to_dict(conv)
+
     def touch_conversation(self, conversation_id: str) -> bool:
         """更新会话活动时间（updated_at/last_activity_at）。"""
         now = datetime.utcnow()

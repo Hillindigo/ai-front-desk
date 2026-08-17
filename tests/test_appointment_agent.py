@@ -34,8 +34,8 @@ class TestAppointmentAgentCoreFeatures:
         user_input = "我想预约明天下午2点的肩颈放松，女服务人员"
         
         # 使用真实的解析流程：通过LLM处理用户输入
-        from langchain_core.chat_history import InMemoryChatMessageHistory
-        chat_history = InMemoryChatMessageHistory()
+        from application.message_buffer import ChatHistoryBuffer
+        chat_history = ChatHistoryBuffer()
         
         # 模拟流式解析过程，获取LLM的完整响应
         ai_content = ""
@@ -102,8 +102,8 @@ class TestAppointmentAgentCoreFeatures:
         unrelated_input = "今天天气怎么样？"
         
         # 使用真实的解析流程：通过LLM处理用户输入
-        from langchain_core.chat_history import InMemoryChatMessageHistory
-        chat_history = InMemoryChatMessageHistory()
+        from application.message_buffer import ChatHistoryBuffer
+        chat_history = ChatHistoryBuffer()
         
         # 模拟流式解析过程，获取LLM的完整响应
         ai_content = ""

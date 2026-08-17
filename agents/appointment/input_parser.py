@@ -7,9 +7,8 @@
 import json
 from typing import Dict, Any, Generator
 from langchain.prompts import PromptTemplate
-from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, AIMessage
+from application.message_buffer import ChatHistoryBuffer, human_msg, ai_msg
 
 
 class InputParser:
@@ -59,28 +58,28 @@ class InputParser:
             )
         )
     
-    def parse_stream(self, user_input: str, chat_history: InMemoryChatMessageHistory) -> Generator[str, None, str]:
+    def parse_stream(self, user_input: str, chat_history: ChatHistoryBuffer) -> Generator[str, None, str]:
         """流式解析用户输入"""
         # 添加用户消息到历史
-        chat_history.add_message(HumanMessage(content=user_input))
-        
+        chat_history.add_message(human_msg(user_input))
+
         # 构建历史字符串
         history_str = "\n".join(
-            [f"用户：{m.content}" if m.type == "human" else f"机器人：{m.content}" 
+            [f"用户：{m['content']}" if m.get("role") == "human" else f"机器人：{m['content']}"
              for m in chat_history.messages]
         )
-        
+
         # 流式调用LLM
         response_stream = self.chain.stream({"history": history_str, "user_input": user_input})
         ai_content = ""
-        
+
         for chunk in response_stream:
             token = chunk.content if hasattr(chunk, "content") else str(chunk)
             ai_content += token
             yield token
-        
+
         # 添加AI回复到历史
-        chat_history.add_message(AIMessage(content=ai_content))
+        chat_history.add_message(ai_msg(ai_content))
         return ai_content
     
     def parse_data(self, ai_content: str) -> Dict[str, Any]:
