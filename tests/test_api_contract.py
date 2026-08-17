@@ -179,15 +179,19 @@ def test_chat_stream_default_conversation_stable(client):
 # ---------- 已知缺陷基线（Phase D 修复） ----------
 
 def test_appointment_create_defect_baseline(client):
-    """基线：api/appointment.py 调用 AppointmentAgent.process_appointment_request
-    （方法不存在），当前返回 400 + detail。Phase D 修复后此测试应改为 200。"""
+    """Phase C C6 已修复：/api/appointment/create 改为领域服务适配器。
+
+    A-R3 原缺陷（调用不存在方法恒 400）已修复；现在返回 200 草稿。
+    旧接口与新接口共享同一领域服务，不再产生第二套写入逻辑。
+    """
     resp = client.post("/api/appointment/create", json={
         "user_id": "u1",
         "service_type": "肩颈放松",
         "preferred_time": "明天下午",
     })
-    assert resp.status_code == 400
-    assert "detail" in resp.json()
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["data"]["status"] == "draft"
 
 
 def test_consultation_ask_defect_baseline(client):

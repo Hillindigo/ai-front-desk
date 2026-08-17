@@ -22,6 +22,7 @@ from .technician import router as technician_router
 from .user_behavior_analysis import router as user_behavior_analysis_router
 from .user_behavior_analysis import router_underscore as user_behavior_analysis_underscore_router
 from .conversations import router as conversations_router
+from .appointments import router as appointments_router
 
 # 创建API路由列表（用于注册到FastAPI应用）
 api_routers = [
@@ -33,4 +34,5 @@ api_routers = [
     user_behavior_analysis_router,
     user_behavior_analysis_underscore_router,
     conversations_router,
+    appointments_router,
 ]
