@@ -160,6 +160,27 @@ event: run_completed    data: {"conversation_id":"...","message_id":"...","inten
 - **知识证据**：检索结果须超过阈值（默认 `0.5`）并带文档 ID / 分数 / 索引版本；索引以不可变快照原子替换，重建不会与查询交换半成品。
 - 验证边界：当前在 SQLite 单进程 + Fake 模式验证；真实模型摘要质量、线上、鉴权、多进程与知识库运营留待后续阶段。
 
+### 知识管理 API（Phase F）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/knowledge/documents` | 按状态/分类/关键词分页查询 |
+| POST | `/api/v1/knowledge/documents` | 创建草稿（不自动发布） |
+| GET | `/api/v1/knowledge/documents/{id}` | 查看文档与版本（不含 embedding/Prompt） |
+| PUT | `/api/v1/knowledge/documents/{id}` | 更新草稿；编辑已发布文档自动降为草稿 |
+| POST | `/api/v1/knowledge/documents/{id}/preview` | 候选版本检索预览（结果标记 `preview: true`，不作为正式依据） |
+| POST | `/api/v1/knowledge/documents/{id}/publish` | 校验、构建候选并发布（成功才进入正式检索） |
+| POST | `/api/v1/knowledge/documents/{id}/archive` | 幂等归档（不再作为新回答依据） |
+| GET/POST | `/api/v1/knowledge/refresh` | 查询刷新状态 / 重建当前发布索引 |
+| POST | `/api/v1/knowledge/search/preview` | 管理检索预览（可含指定草稿候选） |
+| GET | `/api/v1/conversations/{id}/sources` | 最近一条回答的依据（前端来源卡片/无依据提示） |
+
+**发布与回退语义**：索引只从 `published` 文档构建；草稿/失败/归档不进入正式检索。发布失败保留上一份已发布快照（旧版本继续可查），并记录刷新状态供页面重试。语料 `knowledge_version` 持久化于 `knowledge_meta`，重启恢复；`source_version = index-N` 对应完整索引快照。单进程锁串行发布（多进程未完成）。
+
+**回答可信度**：咨询只使用通过阈值（默认 0.5）的 `RetrievedEvidence`，并注入提示词最小片段 + `[来源N]` 引用标识；没有可靠依据时确定性降级拒答，禁止模型编造价格/地址/政策/服务承诺。证据元数据写入 assistant 消息（`/sources` 读取），`[THOUGHT]/[SIGNAL]` 与内部错误不泄漏。评测集与运行器见 `evaluation/`（`python -m evaluation.run_knowledge_eval`），真实模型质量永远待人工核对。
+
+已发布文档状态：`draft → published → archived`，发布失败 `failed` 可重试；旧 `/api/knowledge` 保留薄适配（list/search 契约，`question+answer` 语义），删除条件见 Phase F 交接文档。
+
 ### 预约 API（Phase C）
 
 | 方法 | 路径 | 说明 |

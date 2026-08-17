@@ -40,6 +40,7 @@ Refactoring-Plan/Phase-B/
 Refactoring-Plan/Phase-C/
 Refactoring-Plan/Phase-D/
 Refactoring-Plan/Phase-E/
+Refactoring-Plan/Phase-F/
 ```
 
 本文件只保留跨阶段长期有效的项目规则；具体阶段文档必须记录实际状态、验证结果和遗留问题。
@@ -86,6 +87,7 @@ Repositories / Database
 11. 会话摘要与偏好（Phase E）：`conversation_summaries`（按消息 sequence 覆盖、active/invalidated/failed、版本递增）；`preferences` + `preference_tombstones`（同一 user_id+type 单 active 覆盖语义）。删除偏好 = 单事务：停用偏好 + 写墓碑 + 该用户摘要失效 + 来源消息 metadata 置 `context_excluded` 屏蔽。旧 `user_preferences` 经 `migrate_legacy()` 迁移为 `legacy_unverified`（默认不注入，重新确认才提升）。
 12. 身份边界（Phase E）：`application/identity.py` 的 `IdentityResolver` 抽象 + `DemoIdentityResolver`（本地演示固定 `default_user`，请求体 user_id 只作兼容字段必须一致）。偏好 API `/api/v1/preferences` 走此边界；后续真实鉴权只替换 resolver。
 13. 知识检索（Phase E）：`KnowledgeService` 设 `min_score`（默认 0.5）阈值、候选边界、关键词预过滤；索引以 (index, doc_ids, version) 快照原子替换，`source_version` 随重建递增，旧结果不作当前证据；`search_structured()` 输出结构化证据供上下文。
+14. 知识治理（Phase F）：`KnowledgeDocument` 增 `title/status/draft|published|archived|failed/document_version/knowledge_version/source_type/source_label/created_by/updated_by/published_at/archived_at`；`db/migrations.py` 幂等补列+回填旧行为 published（legacy）。容器唯一持有单一 `KnowledgeService`（`application/container.py`，`initialize()` 一次性构建索引；管理/咨询/发布共享），旧 `/api/knowledge` 与 `api/knowledge_v1.py` 均从容器取实例，未定义 `app` 已修复。发布流水线 `services/knowledge_publish.py`：候选索引构建成功→提交 DB→原子交换；失败保留旧快照并标 failed；语料 `knowledge_version` 持久化 `knowledge_meta`（重启恢复），`source_version=index-N`。咨询只依据通过阈值的 `RetrievedEvidence`（`application/workflows.py` ConsultationWorkflow），无依据确定性降级拒答；证据元数据写入 assistant 消息（`/api/v1/conversations/{id}/sources` 供前端来源卡片）；`[THOUGHT]/[SIGNAL]` 不泄漏。评测集/运行器在 `evaluation/`（`python -m evaluation.run_knowledge_eval`），真实模型质量永远 pending。单进程锁发布，多进程未完成；真实管理员鉴权、审核、审计、门店隔离移交 Phase G。
 
 ## 4. 重构目标和长期原则
 
