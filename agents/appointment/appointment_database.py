@@ -39,22 +39,74 @@ class AppointmentDatabase:
     def save_appointment(self, technician_id: str, start_time: datetime, 
                         end_time: datetime, appointment_history: Dict[str, Any], 
                         session_id: str) -> bool:
-        """保存预约信息到数据库"""
+        """保存预约信息（Phase C C5 适配器：通过领域服务创建并确认预约）。
+
+        不再直接写 technician_schedules；
+        幂等键 = session_id，同一会话重复提交返回同一预约。
+        """
         try:
-            # 通过Services层保存预约
-            success = self.appointment_service.save_appointment(
-                technician_id, start_time, end_time, appointment_history, session_id
-            )
-            
-            if success:
-                # 记录用户行为
-                self._record_user_behavior(start_time, end_time, technician_id, 
-                                         appointment_history, session_id)
-            
-            return success
-            
+            from services.appointment_domain import AppointmentCommandService, AppointmentDomainError
+
+            svc = AppointmentCommandService()
+            try:
+                draft = svc.create_draft(
+                    user_id="default_user",  # 兼容现状：单用户演示（Phase D 传入真实 user_id）
+                    conversation_id=session_id,
+                    service_type=appointment_history.get("project", "门店服务"),
+                    fields={
+                        "project": appointment_history.get("project"),
+                        "technician_id": int(technician_id),
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "duration_minutes": int((end_time - start_time).total_seconds() // 60),
+                    },
+                )
+                pending = svc.request_confirmation(draft["id"], "default_user")
+                svc.confirm(pending["id"], "default_user", idempotency_key=session_id)
+                return True
+            except AppointmentDomainError as e:
+                logger.error(f"领域预约失败: {e.code} {e.message}")
+                return False
+            finally:
+                svc.close()
         except Exception as e:
             logger.error(f"保存预约信息到数据库失败：{e}")
+            return False
+
+    def sync_draft(self, session_id: str, appointment_history: Dict[str, Any]) -> bool:
+        """Phase C C5：把预约对话中已确定的结构化字段同步到会话的持久化草稿。
+
+        用于服务重启后恢复未完成预约上下文（当前仅同步项目字段，
+        其他字段由对话继续收集）。
+        """
+        project = (appointment_history or {}).get("project")
+        if not project or project == "未知":
+            return False
+        try:
+            from services.appointment_domain import AppointmentCommandService, AppointmentDomainError
+
+            svc = AppointmentCommandService()
+            try:
+                existing = svc.get_active_draft(session_id)
+                if existing is None:
+                    svc.create_draft(
+                        user_id="default_user",
+                        conversation_id=session_id,
+                        service_type=project,
+                        fields={"project": project},
+                    )
+                else:
+                    svc.update_draft(
+                        existing["id"], "default_user", {"project": project, "service_type": project}
+                    )
+                return True
+            except AppointmentDomainError as e:
+                logger.error(f"同步预约草稿失败: {e.code} {e.message}")
+                return False
+            finally:
+                svc.close()
+        except Exception as e:
+            logger.error(f"同步预约草稿失败：{e}")
             return False
     
     def _record_user_behavior(self, start_time: datetime, end_time: datetime,

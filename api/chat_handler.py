@@ -21,7 +21,8 @@ def get_task_agent_for(session: ConversationSession):
     """会话专属 task_agent（惰性创建）。
 
     预约草稿由会话专属 AppointmentAgent 实例持有，天然不跨会话共享；
-    创建时把数据库恢复的最近消息注入预约 Agent 的历史（重启恢复上下文）。
+    创建时把数据库恢复的最近消息注入预约 Agent 的历史（重启恢复上下文），
+    并从持久化草稿恢复已确定的项目字段（Phase C C5）。
     """
     if session.agent is None:
         session_id = session.conversation_id
@@ -34,6 +35,21 @@ def get_task_agent_for(session: ConversationSession):
             appointment_agent.chat_history.add_message(
                 {"role": role, "content": message["content"]}
             )
+
+        # Phase C C5：从持久化草稿恢复已确定的项目字段
+        try:
+            from services.appointment_domain import AppointmentCommandService
+
+            svc = AppointmentCommandService()
+            try:
+                draft = svc.get_active_draft(session_id)
+                if draft and draft.get("project"):
+                    appointment_agent.appointment_history["project"] = draft["project"]
+            finally:
+                svc.close()
+        except Exception:
+            # 草稿恢复失败不影响会话主流程
+            pass
 
         session.agent = TaskClassificationAgent(appointment_agent, consultant_agent)
     return session.agent
@@ -87,6 +103,16 @@ async def ProcessUserInput_stream(
             )
             if assistant_message:
                 session.append_message(assistant_message)
+
+            # Phase C C5：预约对话进行中 -> 同步持久化草稿（重启可恢复）
+            if agent.appointment_agent:
+                try:
+                    agent.appointment_agent.appointment_database.sync_draft(
+                        session.conversation_id,
+                        agent.appointment_agent.appointment_history,
+                    )
+                except Exception:
+                    pass
         except Exception:
             # 模型等外部依赖不可用时返回稳定错误（A-R1）
             yield "[ERROR]模型或服务暂不可用，请稍后再试。"
