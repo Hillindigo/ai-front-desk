@@ -1,28 +1,50 @@
-"""聊天处理入口（Phase B B3：会话化）。
+"""聊天处理入口（Phase D D3：收缩为适配层）。
 
-移除全局 task_agent 作为主路径：每个会话拥有独立的运行时对象、Agent 实例
-（含预约草稿）与 asyncio.Lock。消息按"用户消息先落库 -> 会话锁内处理 ->
-assistant 结果落库"写入（决策二：每轮独立短生命周期 DB Session）。
+编排逻辑已移至 application/orchestrator.py（ConversationOrchestrator）；
+本模块只做：默认会话解析兼容 + 通过应用容器调用 Orchestrator + 文本流适配。
+D4 将把文本流替换为 SSE 事件流。
 """
 
-from application.session_runtime import ConversationSession, SessionManager
-from agents.task_classification_agent import TaskClassificationAgent
+import logging
+
 from agents.appointment_agent import AppointmentAgent
 from agents.consultant_agent import ConsultantAgent
+from agents.task_classification_agent import TaskClassificationAgent
+from application.container import Container
 
-_session_manager = SessionManager()
+logger = logging.getLogger(__name__)
+
+_container: Container | None = None
 
 
-def get_session_manager() -> SessionManager:
-    return _session_manager
+def get_container() -> Container:
+    """应用容器（惰性单例，D3）。"""
+    global _container
+    if _container is None:
+        _container = Container()
+    return _container
 
 
-def get_task_agent_for(session: ConversationSession):
+def reset_session_manager():
+    """测试隔离：重建容器（会话管理器随之重建）。"""
+    global _container
+    if _container is not None:
+        try:
+            _container.close()
+        except Exception:
+            pass
+    _container = None
+
+
+def get_session_manager():
+    return get_container().session_manager
+
+
+def get_task_agent_for(session):
     """会话专属 task_agent（惰性创建）。
 
     预约草稿由会话专属 AppointmentAgent 实例持有，天然不跨会话共享；
-    创建时把数据库恢复的最近消息注入预约 Agent 的历史（重启恢复上下文），
-    并从持久化草稿恢复已确定的项目字段（Phase C C5）。
+    创建时恢复最近消息历史，并从持久化草稿恢复已确定的项目字段（Phase C C5）。
     """
     if session.agent is None:
         session_id = session.conversation_id
@@ -55,12 +77,6 @@ def get_task_agent_for(session: ConversationSession):
     return session.agent
 
 
-def reset_session_manager() -> None:
-    """重置会话管理器（测试隔离用）。"""
-    global _session_manager
-    _session_manager = SessionManager()
-
-
 async def ProcessUserInput_stream(
     user_input,
     state=None,
@@ -68,59 +84,22 @@ async def ProcessUserInput_stream(
     conversation_id=None,
     user_id=None,
 ):
-    """
-    会话化流式聊天入口。
-
-    conversation_id 为空时落到默认演示会话（/chat/stream 兼容行为）。
-    """
-    if context is None:
-        context = {}
-
-    manager = get_session_manager()
-    if conversation_id:
-        session = manager.get_or_create_session(conversation_id, user_id=user_id)
-    else:
-        session = manager.get_or_create_default(user_id or "default_user")
-
-    # 1. 会话锁内处理（同一会话并发 turn 完全串行，保证 user->assistant 成对）
-    async with session.lock:
-        # 1a. 用户消息先落库（模型失败也不丢失用户输入），并同步运行时列表
-        user_message = manager.repository.add_message(session.conversation_id, "user", user_input)
-        if user_message:
-            session.append_message(user_message)
-
-        try:
-            agent = get_task_agent_for(session)
-            collected = []
-            async for token in agent.classify_task_stream(user_input):
-                collected.append(token)
-                yield token
-
-            # 3. assistant 最终消息落库（完成后），并同步运行时列表
-            full_response = "".join(collected)
-            assistant_message = manager.repository.add_message(
-                session.conversation_id, "assistant", full_response
-            )
-            if assistant_message:
-                session.append_message(assistant_message)
-
-            # Phase C C5：预约对话进行中 -> 同步持久化草稿（重启可恢复）
-            if agent.appointment_agent:
-                try:
-                    agent.appointment_agent.appointment_database.sync_draft(
-                        session.conversation_id,
-                        agent.appointment_agent.appointment_history,
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            # 模型等外部依赖不可用时返回稳定错误（A-R1）
-            yield "[ERROR]模型或服务暂不可用，请稍后再试。"
-            error_message = manager.repository.add_message(
-                session.conversation_id,
-                "assistant",
-                "[ERROR]模型或服务暂不可用。",
-                message_type="error",
-            )
-            if error_message:
-                session.append_message(error_message)
+    """兼容入口：解析会话 -> 调 Orchestrator -> 文本流输出（D4 替换为 SSE）。"""
+    container = get_container()
+    if not conversation_id:
+        default_session = container.session_manager.get_or_create_default(
+            user_id or "default_user"
+        )
+        conversation_id = default_session.conversation_id
+    try:
+        async for kind, payload in container.orchestrator.handle_turn(
+            conversation_id, user_id or "default_user", user_input
+        ):
+            if kind == "text":
+                yield payload
+            elif kind == "failed":
+                # D3 兼容：失败事件转稳定错误文本（D4 由 run_failed 事件替代）
+                yield "[ERROR]模型或服务暂不可用，请稍后再试。"
+    except Exception as exc:
+        logger.error("聊天处理失败", exc_info=True)
+        yield "[ERROR]模型或服务暂不可用，请稍后再试。"
