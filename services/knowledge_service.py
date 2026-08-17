@@ -293,6 +293,64 @@ class KnowledgeService:
             for i, r in enumerate(rows)
         ]
 
+    async def search_candidate(self, query: str, top_k: int = 3, category: str = None,
+                               include_draft_ids: List[int] = None) -> List[Dict]:
+        """F4：候选预览检索（不交换快照）。
+
+        基于"已发布文档 + 指定草稿候选"临时构建索引并检索，结果一律标记
+        preview: true（预览，不作为正式依据）；不改变当前服务快照。
+        """
+        include_draft_ids = list(include_draft_ids or [])
+        published = self.db.get_published_documents()
+        by_id: Dict[int, Dict] = {int(d["id"]): d for d in published}
+        for did in include_draft_ids:
+            d = self.db.get_document(int(did))
+            if d:
+                by_id[int(did)] = d
+        if not by_id:
+            return []
+        try:
+            candidate = self._assemble_candidate(list(by_id.values()))
+        except Exception:
+            logger.exception("候选预览构建失败")
+            return []
+        if candidate is None:
+            return []
+        idx, doc_ids = candidate
+        query_embedding = embed_input(query)
+        query_array = np.array([query_embedding]).astype('float32')
+        k = min(max(top_k * 2, 1), len(doc_ids), self.max_candidates)
+        scores, indices = idx.search(query_array, k)
+
+        results = []
+        allowed_drafts = set(include_draft_ids)
+        for score, pos in zip(scores[0], indices[0]):
+            if pos < 0 or pos >= len(doc_ids):
+                continue
+            doc_id = doc_ids[pos]
+            if float(score) < self.min_score:
+                continue
+            doc = self.db.get_document(int(doc_id))
+            if not doc:
+                continue
+            is_draft = str(doc.get("status", "")) != "published"
+            if is_draft and int(doc_id) not in allowed_drafts:
+                continue  # 仅允许预览指定的草稿候选
+            results.append({
+                "document_id": int(doc_id),
+                "title": doc.get("title"),
+                "category": doc.get("category", ""),
+                "snippet": str(doc.get("content", ""))[:200],
+                "score": float(score),
+                "rank": len(results) + 1,
+                "status": doc.get("status"),
+                "preview": True,
+                "source_version": f"preview-{self._index_version + 1}",
+            })
+            if len(results) >= top_k:
+                break
+        return results
+
     async def add_document(self, content: str, category: str, keywords: List[str] = None,
                            title: str = None, status: str = "draft",
                            source_type: str = None, source_label: str = None,
