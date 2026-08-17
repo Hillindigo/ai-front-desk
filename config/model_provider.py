@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, ClassVar, Dict, Iterator, List
+from typing import Any, ClassVar, Dict, Iterator, List, Tuple
 
 from dotenv import load_dotenv
 from langchain_core.embeddings import Embeddings
@@ -121,21 +121,78 @@ def create_embedding_model():
 # Fake models (TEST-ONLY). Never used outside of MODEL_PROVIDER=fake.
 # ============================================================================
 
-# 预约字段提取的预设响应（关键词 → JSON 字典）。所有 key 与 InputParser 的
-# prompt 模板保持一致；测试断言依赖其中 project/gender/start_time/unrelated。
-FAKE_APPOINTMENT_JSON: Dict[str, Dict[str, Any]] = {
-    "天气": {
-        "gender": "未知", "start_time": "未知", "duration": "未知",
-        "project": "未知", "preference": "未知", "technician_name": "未知",
-        "confirmation": "未知", "info_complete": False, "unrelated": True,
-        "missing_info": [],
-    },
-    "肩颈放松": {
-        "gender": "女", "start_time": "2026-08-18 14:00", "duration": "60分钟",
-        "project": "肩颈放松", "preference": "无", "technician_name": "未知",
-        "confirmation": "未知", "info_complete": True, "unrelated": False,
-        "missing_info": [],
-    },
+# 预约字段提取预设（Phase B 决策三：有序列表，先长特征串后短关键词）。
+# 所有 key 与 InputParser 的 prompt 模板保持一致。
+# 场景覆盖：预约项目 A/B、缺少字段、确认、取消、无关、未知输入。
+FAKE_APPOINTMENT_PRESETS: List[Tuple[str, Dict[str, Any]]] = [
+    # 1. 预约项目 A（完整信息）—— 测试断言依赖 project/gender/start_time/unrelated
+    (
+        "女服务人员",
+        {
+            "gender": "女", "start_time": "2026-08-18 14:00", "duration": "60分钟",
+            "project": "肩颈放松", "preference": "无", "technician_name": "未知",
+            "confirmation": "未知", "info_complete": True, "unrelated": False,
+            "missing_info": [],
+        },
+    ),
+    # 2. 缺少字段：只有项目，缺时间/性别/时长 -> 多轮追问与草稿隔离场景
+    (
+        "肩颈放松",
+        {
+            "gender": "未知", "start_time": "未知", "duration": "未知",
+            "project": "肩颈放松", "preference": "无", "technician_name": "未知",
+            "confirmation": "未知", "info_complete": False, "unrelated": False,
+            "missing_info": ["start_time", "duration", "gender"],
+        },
+    ),
+    # 3. 预约项目 B（足疗，完整信息）—— 会话 B 的草稿隔离
+    (
+        "足疗",
+        {
+            "gender": "男", "start_time": "2026-08-18 15:00", "duration": "45分钟",
+            "project": "足疗", "preference": "无", "technician_name": "未知",
+            "confirmation": "未知", "info_complete": True, "unrelated": False,
+            "missing_info": [],
+        },
+    ),
+    # 4. 确认（恢复后继续预约）
+    (
+        "确认",
+        {
+            "gender": "未知", "start_time": "未知", "duration": "未知",
+            "project": "未知", "preference": "无", "technician_name": "未知",
+            "confirmation": "是", "info_complete": False, "unrelated": False,
+            "missing_info": [],
+        },
+    ),
+    # 5. 取消/否定（会话内状态不串线）
+    (
+        "取消",
+        {
+            "gender": "未知", "start_time": "未知", "duration": "未知",
+            "project": "未知", "preference": "无", "technician_name": "未知",
+            "confirmation": "否", "info_complete": False, "unrelated": False,
+            "missing_info": [],
+        },
+    ),
+    # 6. 无关请求（天气等）
+    (
+        "天气",
+        {
+            "gender": "未知", "start_time": "未知", "duration": "未知",
+            "project": "未知", "preference": "未知", "technician_name": "未知",
+            "confirmation": "未知", "info_complete": False, "unrelated": True,
+            "missing_info": [],
+        },
+    ),
+]
+
+# 未命中时的默认响应（空输入/未知输入的错误边界）
+FAKE_APPOINTMENT_DEFAULT: Dict[str, Any] = {
+    "gender": "未知", "start_time": "未知", "duration": "未知",
+    "project": "未知", "preference": "未知", "technician_name": "未知",
+    "confirmation": "未知", "info_complete": False, "unrelated": False,
+    "missing_info": ["所有信息"],
 }
 
 # 任务分类的预设响应（关键词 → 类别英文名）
@@ -152,16 +209,25 @@ FAKE_CATEGORY: Dict[str, str] = {
 }
 
 
+def _match_appointment_json(user_input: str) -> str:
+    """按有序预设表匹配预约提取 JSON（长特征串优先）。"""
+    for feature, payload in FAKE_APPOINTMENT_PRESETS:
+        if feature in user_input:
+            return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(FAKE_APPOINTMENT_DEFAULT, ensure_ascii=False)
+
+
 class FakeChatModel(BaseChatModel):
     """测试用假聊天模型：不联网，按输入 prompt 的关键词返回预设响应。
 
     匹配优先级：
     1. 含"只返回类别英文名"        -> 任务分类（appointment/query/other）
-    2. 含"只输出纯JSON"           -> 预约字段提取（JSON 文本）
+    2. 含"只输出纯JSON"           -> 预约字段提取（JSON 文本，有序预设表）
     3. 含"只回答YES或NO"          -> 咨询相关性分类（YES/NO）
     4. 其他                       -> 咨询回答/文案生成（文本）
 
-    所有调用输入记录在类变量 ``calls`` 中，供测试断言；conftest 负责清理。
+    原则（决策三）：预设按输入内容匹配，不依赖调用次数或跨测试状态；
+    所有调用输入记录在类变量 ``calls`` 供审计，conftest 负责清理。
     """
 
     calls: ClassVar[List[str]] = []
@@ -192,11 +258,7 @@ class FakeChatModel(BaseChatModel):
             return "other"
         # 2. 预约字段提取（InputParser）
         if "只输出纯JSON" in text:
-            user_input = self._extract_user_input(text)
-            for keyword, payload in FAKE_APPOINTMENT_JSON.items():
-                if keyword in user_input:
-                    return json.dumps(payload, ensure_ascii=False)
-            return json.dumps(FAKE_APPOINTMENT_JSON["肩颈放松"], ensure_ascii=False)
+            return _match_appointment_json(self._extract_user_input(text))
         # 3. 咨询相关性分类（ConsultationClassifier）
         if "只回答YES或NO" in text:
             user_input = self._extract_user_input(text)
@@ -207,6 +269,16 @@ class FakeChatModel(BaseChatModel):
         user_input = self._extract_user_input(text)
         if any(k in user_input for k in ("预约", "安排", "确认")):
             return "好的，已为您确认预约，服务人员会按时为您服务。"
+        if "足疗" in user_input:
+            return (
+                "足疗服务以舒适体验和日常放松为主，适合缓解足部疲劳、改善睡眠。"
+                "欢迎您到店体验足疗服务。"
+            )
+        if "价格" in user_input or "多少钱" in user_input:
+            return (
+                "我们提供多种服务项目：基础护理120元/60分钟、肩颈放松80元/30分钟、"
+                "足部护理100元/45分钟。实际价格以门店配置为准。"
+            )
         return (
             "肩颈放松服务对缓解肌肉疲劳有很好的效果，能够促进血液循环、"
             "缓解肩颈紧张，适合长期伏案的人群。欢迎您预约体验。"

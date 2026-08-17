@@ -1,35 +1,61 @@
-from contextlib import contextmanager
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
-from ..models import Base
+"""数据库会话管理器（Phase B 决策一：数据库路径统一来自 config.database.db_config）"""
 
+from contextlib import contextmanager
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import sessionmaker, scoped_session
+from config.database import db_config
+from ..models import Base
+import os
 
 class SessionManager:
     """
     数据库会话管理器
-    
+
     职责：
     1. 管理数据库连接和会话
     2. 提供统一的会话上下文管理
     3. 处理事务和异常回滚
+
+    Phase B（决策一）：db_path 允许显式传入（测试注入），缺省时统一取
+    ``db_config.connection_string``，业务代码禁止硬编码 SQLite 路径。
     """
-    
-    def __init__(self, db_path='sqlite:///data/ai_front_desk.db'):
-        """
-        初始化会话管理器
-        
+
+    def __init__(self, db_path: str | None = None):
+        """初始化会话管理器
+
         Args:
-            db_path: 数据库连接路径
+            db_path: 数据库连接路径；None 时使用全局 db_config（推荐）
         """
-        self.engine = create_engine(db_path)
+        self.db_path = db_path or db_config.connection_string
+
+        if self.db_path.startswith("sqlite"):
+            self._init_sqlite()
+        else:
+            self.engine = create_engine(self.db_path, **db_config.get_engine_kwargs())
+
         Base.metadata.create_all(self.engine)
         self.Session = scoped_session(sessionmaker(bind=self.engine))
+
+    def _init_sqlite(self):
+        """SQLite 初始化：确保父目录存在、开启 WAL（并发写友好）。"""
+        database = make_url(self.db_path).database
+        if database and database != ":memory:":
+            parent = os.path.dirname(os.path.abspath(database))
+            os.makedirs(parent, exist_ok=True)
+        self.engine = create_engine(
+            self.db_path,
+            connect_args={"check_same_thread": False},
+        )
+        with self.engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
 
     @contextmanager
     def session_scope(self):
         """
         提供会话上下文管理
-        
+
         自动处理：
         - 会话创建和关闭
         - 事务提交和回滚

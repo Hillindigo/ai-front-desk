@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class KnowledgeService:
     """知识库服务类 - 结合数据库存储和向量检索"""
     
-    def __init__(self, db_path: str = 'sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         # 使用统一的DatabaseRouter，符合架构设计
         self.db_router = DatabaseRouter(db_path)
         self.db = self.db_router.knowledge  # 通过router访问knowledge repository

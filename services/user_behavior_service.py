@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class UserBehaviorService:
     """用户行为服务类"""
     
-    def __init__(self, db_path: str = 'sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         self.db_router = DatabaseRouter(db_path)
         self.user_behavior_repo = self.db_router.user_behavior
     

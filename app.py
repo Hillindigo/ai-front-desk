@@ -37,21 +37,21 @@ class SearchRequest(BaseModel):
     top_k: int = 5
     category: Optional[str] = None
 
-async def initialize_system():
-    """系统启动时自动初始化"""
+async def initialize_system(app: Optional[FastAPI] = None):
+    """系统启动时自动初始化（Phase B 决策/A-R1：初始化失败不阻断应用启动）"""
     try:
         logger.info("🚀 正在初始化 AI Front Desk 运营系统...")
-        
+
         # 初始化知识库服务
         logger.info("📚 初始化知识库服务...")
         knowledge_service = KnowledgeService()
         await knowledge_service.initialize()
-        
+
         # 初始化服务人员服务
         logger.info("👥 初始化服务人员服务...")
         technician_service = TechnicianService()
         technician_service.initialize_default_technicians()
-        
+
         # 初始化推荐服务
         logger.info("🎯 启动推荐调度服务...")
         recommendation_service = RecommendationService()
@@ -59,12 +59,17 @@ async def initialize_system():
             logger.info("✅ 推荐调度服务启动成功")
         else:
             logger.warning("⚠️ 推荐调度服务启动失败")
-        
+
         logger.info("✅ 系统初始化完成！")
-        
+        if app is not None:
+            app.state.initialization_error = None
+
     except Exception as e:
-        logger.error(f"❌ 系统初始化失败: {e}")
-        raise
+        # A-R1：模型/知识库等外部依赖不可用时降级启动，避免整个应用无法启动。
+        # 只记录脱敏错误信息，不输出密钥或完整敏感配置。
+        logger.error(f"❌ 系统初始化失败（应用仍可启动，依赖将不可用）: {type(e).__name__}")
+        if app is not None:
+            app.state.initialization_error = f"{type(e).__name__}: {str(e)[:200]}"
 
 def create_app() -> FastAPI:
     """创建FastAPI应用实例"""
@@ -100,11 +105,10 @@ def create_app() -> FastAPI:
     # 静态文件
     app.mount("/static", StaticFiles(directory="web/static"), name="static")
 
-    # 添加启动事件
+    # 添加启动事件（初始化失败降级，不阻断启动）
     @app.on_event("startup")
     async def startup_event():
-        """应用启动时自动初始化系统"""
-        await initialize_system()
+        await initialize_system(app)
 
     return app
 

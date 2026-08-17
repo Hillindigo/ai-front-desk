@@ -13,7 +13,7 @@ class DatabaseRouter:
     3. 协调各个Repository的操作
     """
     
-    def __init__(self, db_path: str = 'sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         """
         初始化数据库路由器
         

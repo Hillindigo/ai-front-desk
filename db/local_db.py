@@ -18,7 +18,7 @@ class LocalUserBehaviorDB:
     将旧接口重定向到新的UserBehaviorRepository
     """
     
-    def __init__(self, db_path='sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         warnings.warn(
             "LocalUserBehaviorDB已弃用，请使用 DatabaseRouter().user_behavior 或 UserBehaviorRepository",
             DeprecationWarning,
@@ -71,7 +71,7 @@ class LocalTechnicianDB:
     将旧接口重定向到新的TechnicianRepository
     """
     
-    def __init__(self, db_path='sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         warnings.warn(
             "LocalTechnicianDB已弃用，请使用 DatabaseRouter().technicians 或 TechnicianRepository",
             DeprecationWarning,
@@ -128,7 +128,7 @@ class LocalKnowledgeDB:
     知识库数据库的兼容性类
     """
     
-    def __init__(self, db_path='sqlite:///data/ai_front_desk.db'):
+    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         warnings.warn(
             "LocalKnowledgeDB已弃用，请使用 DatabaseRouter().knowledge 或 KnowledgeRepository",
             DeprecationWarning,
