@@ -31,7 +31,7 @@ class TestUserBehaviorAgentCoreFeatures:
             "service_type": "肩颈放松",
             "preferred_time": "下午",
             "gender_preference": "女",
-            "timestamp": datetime.now()
+            "timestamp": datetime.now().isoformat()
         }
         
         # 记录行为
@@ -145,14 +145,14 @@ class TestUserBehaviorAgentCoreFeatures:
             patterns_data.append({
                 "user_id": user_id,
                 "action": "appointment_request",
-                "timestamp": base_time + timedelta(days=i*3),
+                "timestamp": (base_time + timedelta(days=i*3)).isoformat(),
                 "service_type": "肩颈放松" if i % 2 == 0 else "深度放松"
             })
         
         # 添加一些取消记录
         patterns_data.extend([
-            {"user_id": user_id, "action": "appointment_cancel", "timestamp": base_time + timedelta(days=5)},
-            {"user_id": user_id, "action": "appointment_cancel", "timestamp": base_time + timedelta(days=15)},
+            {"user_id": user_id, "action": "appointment_cancel", "timestamp": (base_time + timedelta(days=5)).isoformat()},
+            {"user_id": user_id, "action": "appointment_cancel", "timestamp": (base_time + timedelta(days=15)).isoformat()},
         ])
         
         # 记录数据
@@ -190,8 +190,8 @@ class TestUserBehaviorAgentCoreFeatures:
         
         # 创建有趣的行为数据用于洞察
         insight_data = [
-            {"user_id": user_id, "action": "consultation", "topic": "肩颈放松效果", "timestamp": datetime.now()},
-            {"user_id": user_id, "action": "appointment", "service_type": "肩颈放松", "timestamp": datetime.now()},
+            {"user_id": user_id, "action": "consultation", "topic": "肩颈放松效果", "timestamp": datetime.now().isoformat()},
+            {"user_id": user_id, "action": "appointment", "service_type": "肩颈放松", "timestamp": datetime.now().isoformat()},
             {"user_id": user_id, "action": "feedback", "rating": 5, "comment": "很满意"},
         ]
         
@@ -313,7 +313,7 @@ class TestUserBehaviorAgentDataManagement:
             "phone_number": "13800138000",  # 敏感信息
             "real_name": "张三",  # 敏感信息
             "service_type": "肩颈放松",
-            "timestamp": datetime.now() - timedelta(days=400)  # 过期数据
+            "timestamp": (datetime.now() - timedelta(days=400)).isoformat()  # 过期数据
         }
         
         agent.behavior_recorder.record_behavior(sensitive_data)

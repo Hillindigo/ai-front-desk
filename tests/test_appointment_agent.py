@@ -167,7 +167,7 @@ class TestAppointmentAgentCoreFeatures:
         # 应该能处理不完整信息（不抛出异常）
         try:
             response_tokens = []
-            async for token in agent.appointment_processor.handle_incomplete_info(incomplete_data):
+            async for token in agent.appointment_processor.handle_incomplete_info(incomplete_data, agent.appointment_history):
                 response_tokens.append(token)
             
             response = "".join(response_tokens)
