@@ -39,6 +39,15 @@ class Container:
         # 领域服务
         self.appointment_service = AppointmentCommandService(self.db_router)
 
+        # Phase E：身份解析与偏好服务（决策三：请求体 user_id 只作兼容字段）
+        from application.identity import DemoIdentityResolver
+        from db.repositories.preference_repository import PreferenceRepository
+        from services.preference_service import PreferenceService
+
+        self.identity_resolver = DemoIdentityResolver()
+        self.preference_repository = PreferenceRepository(self.db_router.session_manager)
+        self.preference_service = PreferenceService(self.preference_repository)
+
         # 意图路由（规则优先；LLM 兜底由外部注入）
         self.intent_router = IntentRouter(llm_classifier=llm_classifier)
 

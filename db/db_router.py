@@ -31,7 +31,11 @@ class DatabaseRouter:
         # 初始化各个Repository
         self.technician_repo = TechnicianRepository(self.session_manager)
         self.knowledge_repo = KnowledgeRepository(self.session_manager)
-        self.user_behavior_repo = UserBehaviorRepository(self.session_manager)
+        from .repositories.preference_repository import PreferenceRepository
+
+        self.preference_repo = PreferenceRepository(self.session_manager)
+        # Phase E E4：旧 user_behavior 偏好读写收敛到新表（避免两套事实并存）
+        self.user_behavior_repo = UserBehaviorRepository(self.session_manager, preference_repository=self.preference_repo)
         self.conversation_repo = ConversationRepository(self.session_manager)
         self.appointment_repo = AppointmentRepository(self.session_manager)
 

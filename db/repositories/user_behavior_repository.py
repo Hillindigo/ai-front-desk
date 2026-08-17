@@ -16,14 +16,16 @@ class UserBehaviorRepository(BaseUserBehaviorRepository):
     4. 用户统计信息生成
     """
     
-    def __init__(self, session_manager: SessionManager):
+    def __init__(self, session_manager: SessionManager, preference_repository=None):
         """
         初始化用户行为数据仓库
         
         Args:
             session_manager: 会话管理器
+            preference_repository: Phase E 偏好仓库（注入后偏好读写重定向到新表）
         """
         self.session_manager = session_manager
+        self.preference_repository = preference_repository
 
     def record_behavior(self, user_id: str, action_type: str, action_data: Optional[Dict[str, Any]] = None, 
                        technician_id: Optional[int] = None, session_id: Optional[str] = None) -> int:
@@ -99,7 +101,7 @@ class UserBehaviorRepository(BaseUserBehaviorRepository):
 
     def update_user_preference(self, user_id: str, preference_type: str, preference_value: str) -> bool:
         """
-        更新用户偏好
+        更新用户偏好（Phase E E4：注入 preference_repository 时收敛到新表覆盖语义）
         
         Args:
             user_id: 用户ID
@@ -109,6 +111,15 @@ class UserBehaviorRepository(BaseUserBehaviorRepository):
         Returns:
             更新是否成功
         """
+        if self.preference_repository is not None:
+            return self.preference_repository.set_preference(
+                user_id=user_id,
+                preference_type=preference_type,
+                preference_value=preference_value,
+                source="explicit_memorize",
+                confidence=100,
+                last_confirmed_at=datetime.utcnow(),
+            ) is not None
         with self.session_manager.session_scope() as session:
             # 查找现有偏好
             existing = session.query(UserPreference).filter(
@@ -135,7 +146,7 @@ class UserBehaviorRepository(BaseUserBehaviorRepository):
 
     def get_user_preferences(self, user_id: str, preference_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        获取用户偏好
+        获取用户偏好（Phase E E4：注入 preference_repository 时读取新表事实来源）
         
         Args:
             user_id: 用户ID
@@ -144,6 +155,11 @@ class UserBehaviorRepository(BaseUserBehaviorRepository):
         Returns:
             用户偏好列表
         """
+        if self.preference_repository is not None:
+            rows = self.preference_repository.get_all_preferences(user_id)
+            if preference_type:
+                rows = [r for r in rows if r["preference_type"] == preference_type]
+            return rows
         with self.session_manager.session_scope() as session:
             query = session.query(UserPreference).filter(UserPreference.user_id == user_id)
             

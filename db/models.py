@@ -186,6 +186,47 @@ class ConversationSummary(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Preference(Base):
+    """长期偏好表（Phase E E4：唯一持久化事实来源）。
+
+    - 同一 user_id + preference_type 最多一个 active 值（覆盖语义，决策四）。
+    - source 标记来源（explicit_memorize / business_confirmation / legacy_unverified）。
+    - 删除 = 置 inactive + 写墓碑（原行保留用于审计）。
+    """
+
+    __tablename__ = "preferences"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String(64), nullable=False, default="default_user", index=True)
+    preference_type = Column(String(32), nullable=False)
+    preference_value = Column(Text, nullable=False)
+    source = Column(String(32), nullable=False, default="explicit_memorize")
+    source_message_id = Column(String(36), nullable=True)
+    source_appointment_id = Column(String(36), nullable=True)
+    confidence = Column(Integer, default=5)  # 0-100：00 未确认历史 -> 低值；显式确认 -> 100
+    last_confirmed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Integer, default=1)
+    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PreferenceTombstone(Base):
+    """偏好删除墓碑表（Phase E E4：防旧缓存/旧摘要/并发读取重新激活）。"""
+
+    __tablename__ = "preference_tombstones"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    preference_type = Column(String(32), nullable=False)
+    normalized_value = Column(Text, nullable=False)
+    original_preference_id = Column(Integer, nullable=True)
+    source_message_id = Column(String(36), nullable=True)
+    source_appointment_id = Column(String(36), nullable=True)
+    deleted_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserPreference(Base):
     __tablename__ = 'user_preferences'
     id = Column(Integer, primary_key=True)
