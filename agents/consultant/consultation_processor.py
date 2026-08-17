@@ -22,29 +22,28 @@ class ConsultationProcessor:
         self.consultation_classifier = consultation_classifier
         self.response_generator = response_generator
     
-    async def process_consultation(self, user_input: str) -> str:
-        """处理标准咨询"""
-        # 1. 检索知识
-        knowledge_docs = await self.knowledge_retriever.search_knowledge(user_input, top_k=3)
-        
-        # 2. 生成响应
-        response = await self.response_generator.generate_response(user_input, knowledge_docs)
-        
-        return response
-    
-    async def process_consultation_stream(self, user_input: str, session_id: str) -> AsyncGenerator[str, None]:
-        """处理流式咨询"""
-        try:
-            # 1. 检索知识
+    async def process_consultation(self, user_input: str, knowledge_docs: list = None) -> str:
+        """处理标准咨询（F5：knowledge_docs 非空时使用权威证据，不自行检索）"""
+        if knowledge_docs is None:
             knowledge_docs = await self.knowledge_retriever.search_knowledge(user_input, top_k=3)
-            
+        response = await self.response_generator.generate_response(user_input, knowledge_docs)
+        return response
+
+    async def process_consultation_stream(self, user_input: str, session_id: str,
+                                          knowledge_docs: list = None) -> AsyncGenerator[str, None]:
+        """处理流式咨询（F5：knowledge_docs 非空则使用权威证据，不绕过结构化检索）"""
+        try:
+            # 1. 检索知识（仅当未注入权威证据时）
+            if knowledge_docs is None:
+                knowledge_docs = await self.knowledge_retriever.search_knowledge(user_input, top_k=3)
+
             # 2. 生成响应
             async for token in self.response_generator.generate_response_stream(user_input, knowledge_docs):
                 yield token
-            
+
             # 3. 记录用户行为
             await self._record_consultation_behavior(user_input, knowledge_docs, session_id)
-            
+
         except Exception as e:
             yield f"[REPLY][咨询机器人]抱歉，处理您的问题时出现了错误：{str(e)}"
     

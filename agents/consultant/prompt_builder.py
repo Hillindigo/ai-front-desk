@@ -49,13 +49,20 @@ class PromptBuilder:
         return self.classification_prompt_template.format(user_input=user_input)
     
     def _build_knowledge_context(self, knowledge_docs: List[Dict[str, Any]]) -> str:
-        """构建知识库上下文"""
+        """构建知识库上下文（F5：证据片段带 [来源i] 引用标识，强约束只依据信息回答）"""
         if not knowledge_docs:
-            return "没有找到直接相关的知识库信息，请基于当前门店配置和一般服务流程回答。"
-        
-        context = "\n以下是相关的知识库信息：\n"
+            return "没有找到相关依据。你只能依据上述可用的门店配置信息回答，禁止编造价格、地址、政策或服务承诺。"
+
+        context = "\n以下是检索到的门店事实依据（每条带来源编号，请严格依据这些信息回答）：\n"
         for i, doc in enumerate(knowledge_docs, 1):
-            context += f"{i}. {doc['content']}\n"
-        context += "\n请基于以上信息回答用户问题。如果知识库信息不足，请明确说明需要运营人员补充，不要编造价格、地址或服务承诺。\n"
-        
+            source_tag = doc.get("source_label") or doc.get("category") or "门店知识"
+            context += (
+                f"[来源{i}]（文档{doc.get('document_id', '?')}，{source_tag}）"
+                f"{doc.get('content', doc.get('snippet', ''))}\n"
+            )
+        context += (
+            "\n约束：只依据以上[来源]事实回答；涉及价格、地址、营业时间、政策或服务承诺时"
+            "必须给出对应的[来源编号]；信息不足时必须明确说明，禁止编造或使用\"通常/大概\""
+            "等猜测性表述；本店预约实时状态以预约系统为准。\n"
+        )
         return context

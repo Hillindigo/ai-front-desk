@@ -234,14 +234,19 @@ class ConversationOrchestrator:
 
                 # 4. assistant 完整消息落库（增量不是事实来源；内容为清洗后文本）
                 full_response = "".join(collected)
+                # F5：证据元数据写入 assistant 消息（引用依据，供审计/前端来源卡片）
+                evidence_meta = (context_input or {}).get("retrieved_evidence", [])
+                assistant_metadata = {
+                    "intent": intent.to_dict(),
+                    "evidence": evidence_meta,
+                }
+                if request_id:
+                    assistant_metadata["client_request_id"] = request_id
                 assistant_msg = self.session_manager.repository.add_message(
                     conversation_id,
                     "assistant",
                     full_response,
-                    metadata={
-                        "client_request_id": request_id,
-                        "intent": intent.to_dict(),
-                    } if request_id else {"intent": intent.to_dict()},
+                    metadata=assistant_metadata,
                 )
                 if assistant_msg:
                     session.append_message(assistant_msg)

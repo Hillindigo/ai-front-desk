@@ -10,7 +10,7 @@
 """
 
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from application.contracts import AppointmentSubAction, IntentClassification, IntentType
 from services.appointment_domain import AppointmentCommandService, AppointmentDomainError
@@ -111,7 +111,28 @@ class AppointmentWorkflow:
 
 
 class ConsultationWorkflow:
-    """咨询工作流：包装 ConsultantAgent（不管理数据库连接）。"""
+    """咨询工作流：包装 ConsultantAgent（F5：权威证据约束 + 无依据确定性降级）。"""
+
+    @staticmethod
+    def _evidence_to_knowledge_docs(evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """将 ContextBuilder 的 RetrievedEvidence 转为提示词所需的知识文档片段。
+
+        只取最小片段 + 引用标识（document_id/source_version），不携带嵌入或原始供应商内容。
+        """
+        docs = []
+        for ev in evidence:
+            snippet = str(ev.get("snippet") or "").strip()
+            if not snippet:
+                continue
+            docs.append({
+                "content": snippet,
+                "document_id": ev.get("document_id"),
+                "category": ev.get("category", ""),
+                "score": ev.get("score", 0.0),
+                "rank": ev.get("rank"),
+                "source_label": f"知识库(版本 {ev.get('source_version', '?')})",
+            })
+        return docs
 
     async def run(
         self,
@@ -119,10 +140,21 @@ class ConsultationWorkflow:
         user_input: str,
         intent: IntentClassification,
         user_id: str = "default_user",
-        context: Optional[Dict[str, Any]] = None,  # Phase E E5：证据/偏好上下文（仅传递，注入后续工作流）
+        context: Optional[Dict[str, Any]] = None,  # Phase E E5/F5：证据/偏好上下文
     ) -> AsyncGenerator[str, None]:
+        evidence = (context or {}).get("retrieved_evidence") or []
+        if not evidence:
+            # 无依据降级：确定性回复，不让模型自由编造价格/地址/政策/服务承诺。
+            yield ("[REPLY][咨询机器人]抱歉，当前没有足够可靠的门店依据来准确回答这个问题。"
+                   "为避免给出不准确的信息，建议您到店或致电门店咨询，或换一种更具体的问法。\n")
+            return
+        knowledge_docs = self._evidence_to_knowledge_docs(evidence)
+        if not knowledge_docs:
+            yield ("[REPLY][咨询机器人]抱歉，当前检索到的依据不足，无法可靠回答。"
+                   "建议您到店或致电门店咨询。\n")
+            return
         consultant_agent = session.agent.consultant_agent
-        async for token in consultant_agent.consult_stream(user_input):
+        async for token in consultant_agent.consult_stream(user_input, knowledge_docs=knowledge_docs):
             yield token
 
 

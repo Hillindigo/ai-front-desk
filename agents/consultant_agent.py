@@ -69,11 +69,12 @@ class ConsultantAgent:
         """
         return await self.consultation_processor.process_consultation(user_input)
 
-    async def consult_stream(self, user_input: str):
+    async def consult_stream(self, user_input: str, knowledge_docs: list = None):
         """
         流式输出咨询结果
-        
-        这是主要的咨询入口点，协调各个组件完成咨询流程
+
+        F5：knowledge_docs 非空时使用权威证据（ContextBuilder 命中检索）生成，
+        不再自行检索，避免绕过结构化证据；空证据由工作流在调用前降级。
         """
         # 1. 检查是否与咨询相关
         is_consultation = await self.consultation_classifier.is_consultation_related(user_input)
@@ -88,7 +89,7 @@ class ConsultantAgent:
         
         # 3. 处理咨询相关的请求
         async for token in self.consultation_processor.process_consultation_stream(
-            user_input, self.session_id
+            user_input, self.session_id, knowledge_docs=knowledge_docs
         ):
             yield token
         
