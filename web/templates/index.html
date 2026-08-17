@@ -453,6 +453,41 @@
     const typingIndicator = document.getElementById('typing-indicator');
     let lastBotBubble = null;
 
+    // === Phase B：会话管理（localStorage 保存 conversation_id）===
+    let conversationId = localStorage.getItem('conversation_id');
+
+    async function ensureConversation() {
+        if (!conversationId) {
+            try {
+                const res = await fetch('/api/v1/conversations', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: 'default_user', channel: 'web'})
+                });
+                if (!res.ok) throw new Error('创建会话失败: ' + res.status);
+                const data = await res.json();
+                conversationId = data.conversation_id;
+                localStorage.setItem('conversation_id', conversationId);
+            } catch (e) {
+                console.error('创建会话失败:', e);
+            }
+        }
+        return conversationId;
+    }
+
+    async function newConversation() {
+        // 新建会话：创建新 ID（不只是清空浏览器文本）
+        conversationId = null;
+        localStorage.removeItem('conversation_id');
+        await ensureConversation();
+        // 清空聊天区，保留欢迎消息
+        const welcomeMessage = chatBox.querySelector('.message.bot').cloneNode(true);
+        chatBox.innerHTML = '';
+        chatBox.appendChild(welcomeMessage);
+        lastBotBubble = null;
+        userInput.focus();
+    }
+
     function addMessage(text, sender) {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message ' + sender;
@@ -565,11 +600,28 @@
         lastBotBubble = chatBox.querySelector('.message.bot:last-child .bubble');
         
         try {
-            const res = await fetch('/chat/stream', {
+            await ensureConversation();
+            let res = await fetch('/chat/stream', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: text})
+                body: JSON.stringify({message: text, conversation_id: conversationId, user_id: 'default_user'})
             });
+            
+            // 会话不存在/失效：重建会话并重发一次
+            if (res.status === 404 || res.status === 403) {
+                conversationId = null;
+                localStorage.removeItem('conversation_id');
+                await ensureConversation();
+                res = await fetch('/chat/stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: text, conversation_id: conversationId, user_id: 'default_user'})
+                });
+            }
+            
+            if (!res.ok || !res.body) {
+                throw new Error('聊天请求失败: ' + res.status);
+            }
             
             hideTypingIndicator();
             
@@ -596,16 +648,8 @@
     }
 
     clearBtn.onclick = function() {
-        // 保留欢迎消息，只清除其他对话
-        const welcomeMessage = chatBox.querySelector('.message.bot').cloneNode(true);
-        chatBox.innerHTML = '';
-        chatBox.appendChild(welcomeMessage);
-        
-        // 重新设置lastBotBubble为null
-        lastBotBubble = null;
-        
-        // 聚焦输入框
-        userInput.focus();
+        // Phase B：新建会话（创建新 conversation_id + 清空当前对话）
+        newConversation();
     }
     
     // 添加回车键发送功能
