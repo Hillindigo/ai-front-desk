@@ -137,12 +137,3 @@ python -m compileall agents api config db services web app.py
 
 如果本地没有配置可用的模型提供商，涉及 LLM 的测试可能无法完整运行；这不等同于业务代码已经通过生产验收。
 
-## 项目来源与改造说明
-
-本项目是在获得公开发布改造版权限的前提下，基于 [`jerry-ai-dev/smart-appointment-ai-agent`](https://github.com/jerry-ai-dev/smart-appointment-ai-agent) 的代码结构和已有能力进行重构，重新定义为通用的线下服务门店智能运营 Agent。具体来源与改造范围见 [`NOTICE.md`](NOTICE.md)。
-
-本仓库的提交历史已按当前维护者身份重建；这表示当前 Git 历史中的提交归属，不改变上游项目原始作者对其原始代码的事实贡献。
-
-## License
-
-当前仓库未附带上游许可证文本。公开发布前请以已获得的授权范围为准；如需向第三方开放再分发，应补充适用的许可证和完整版权声明。
