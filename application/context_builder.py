@@ -68,10 +68,10 @@ class SummaryReader(ABC):
 
 
 class EvidenceReader(ABC):
-    """知识检索读取器（通过阈值的结果才能返回）。"""
+    """知识检索读取器（通过阈值的结果才能返回；实现可为异步）。"""
 
     @abstractmethod
-    def retrieve(self, query: str, limit: int) -> List[RetrievedEvidence]:
+    async def retrieve(self, query: str, limit: int) -> List[RetrievedEvidence]:
         """返回已过阈值的证据列表，无依据返回空列表。"""
 
 
@@ -121,10 +121,10 @@ class ContextBuilder:
         workflow_state: Optional[Dict[str, Any]] = None,
     ) -> ContextPackage:
         """按固定顺序装配并裁剪，输出可审计的 ContextPackage。"""
-        package = self._collect(conversation_id, user_id, current_input, workflow_state or {})
+        package = await self._collect(conversation_id, user_id, current_input, workflow_state or {})
         return self._apply_budget(package)
 
-    def _collect(
+    async def _collect(
         self,
         conversation_id: str,
         user_id: str,
@@ -172,7 +172,7 @@ class ContextBuilder:
             omitted.append({"source": "recent_messages", "reason": OmissionReason.SOURCE_UNAVAILABLE.value})
 
         # 5. 知识证据（读取器已保证通过阈值；数量上限由预算约束）
-        retrieved_evidence = self._evidence.retrieve(current_input, self._budget.max_evidence_items)
+        retrieved_evidence = await self._evidence.retrieve(current_input, self._budget.max_evidence_items)
         if retrieved_evidence:
             included.append("retrieved_evidence")
         else:

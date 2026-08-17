@@ -115,44 +115,37 @@ class ServicePreferenceReader(PreferenceReader):
 
 
 class KnowledgeEvidenceReader(EvidenceReader):
-    """知识证据读取（阈值过滤 + 引用字段；并发/索引快照治理在 E6 加固）。"""
+    """知识证据读取（E6：KnowledgeService 已保证阈值过滤与索引快照一致性）。"""
 
     def __init__(self, knowledge_service, min_score: float = KNOWLEDGE_MIN_SCORE_DEFAULT):
         self._knowledge = knowledge_service
         self._min_score = min_score
 
-    def retrieve(self, query: str, limit: int) -> List[RetrievedEvidence]:
+    async def retrieve(self, query: str, limit: int) -> List[RetrievedEvidence]:
         try:
-            results = self._knowledge.search(query, top_k=limit)
+            results = await self._knowledge.search_structured(query, top_k=limit)
         except Exception:
-            logger.exception("知识检索失败（旁路降级）")
+            logger.exception("知识检索失败（旁路降级），返回无依据结果")
             return []
         evidence: List[RetrievedEvidence] = []
-        seen: set = set()
-        for doc in results or []:
-            doc_id = doc.get("id")
-            score = float(doc.get("score", 0.0) or 0.0)
-            if doc_id in seen or score < self._min_score:
+        for row in results or []:
+            score = float(row.get("score", 0.0))
+            if score < self._min_score:  # 双保险：服务端阈值之外的兜底
                 continue
-            seen.add(doc_id)
-            snippet = str(doc.get("content", ""))[:200]
-            if not snippet:
-                continue
-            evidence.append(
-                RetrievedEvidence(
-                    document_id=int(doc_id),
-                    category=str(doc.get("category", "")),
-                    snippet=snippet,
-                    score=score,
-                    source_version=f"index-{self._index_epoch()}",
-                    rank=len(evidence) + 1,
+            try:
+                evidence.append(
+                    RetrievedEvidence(
+                        document_id=int(row["document_id"]),
+                        category=str(row.get("category", "")),
+                        snippet=str(row.get("snippet", "")),
+                        score=score,
+                        source_version=str(row.get("source_version", "index-0")),
+                        rank=int(row.get("rank", len(evidence) + 1)),
+                    )
                 )
-            )
+            except (KeyError, ValueError, TypeError):
+                logger.warning("检索结果缺少必需字段，跳过一条")
+                continue
             if len(evidence) >= limit:
                 break
         return evidence
-
-    @staticmethod
-    def _index_epoch() -> int:
-        """本地演示的索引版本标识（E6 改为真实重建版本；引用可追溯）。"""
-        return int(datetime.now(timezone.utc).timestamp())

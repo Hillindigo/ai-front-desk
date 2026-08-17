@@ -110,7 +110,7 @@ class FakeReaders:
     def evidence_reader(self) -> EvidenceReader:
         rs = self
         class R(EvidenceReader):
-            def retrieve(_self, query, limit):
+            async def retrieve(_self, query, limit):
                 rs.calls["evidence"] += 1
                 return rs.evidence[:limit]
 

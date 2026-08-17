@@ -1,5 +1,6 @@
 # services/knowledge_service.py
 
+import threading
 import numpy as np
 import faiss
 from typing import List, Dict, Tuple, Optional
@@ -10,15 +11,33 @@ import logging
 logger = logging.getLogger(__name__)
 
 class KnowledgeService:
-    """知识库服务类 - 结合数据库存储和向量检索"""
-    
-    def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
+    """知识库服务类 - 结合数据库存储和向量检索
+
+    Phase E E6 最小可靠性封口：
+    - 查询读取不可变索引快照（(index, doc_ids, version) 原子替换），不与重建交换半成品。
+    - 结果必须超过配置化相似度阈值 min_score 才能返回（低于阈值 = 无可靠依据）。
+    - 可选关键词预过滤缩减候选（不得绕过相似度阈值）。
+    - source_version 随重建递增，旧结果不得被标记为当前证据。
+    """
+
+    def __init__(self, db_path: str | None = None,
+                 min_score: float = 0.5,
+                 max_candidates: int = 20,
+                 enable_keyword_prefilter: bool = True):  # Phase B 决策一：None 时取 db_config
         # 使用统一的DatabaseRouter，符合架构设计
         self.db_router = DatabaseRouter(db_path)
         self.db = self.db_router.knowledge  # 通过router访问knowledge repository
         self.index = None
         self.document_ids = []  # 维护文档ID与索引位置的映射
         self.initialized = False
+
+        # Phase E E6：阈值、候选边界、索引快照与并发锁
+        self.min_score = min_score
+        self.max_candidates = max_candidates
+        self.enable_keyword_prefilter = enable_keyword_prefilter
+        self._lock = threading.RLock()
+        self._snapshot: Optional[Tuple] = None  # (index, doc_ids_tuple, version)
+        self._index_version = 0
         
         # 默认知识库内容
         self.default_knowledge = [
@@ -116,84 +135,143 @@ class KnowledgeService:
                 logger.error(f"添加默认知识失败: {e}")
 
     async def _build_vector_index(self):
-        """构建向量索引"""
+        """构建向量索引（E6：新索引完成后原子替换快照，查询不读半成品）"""
         try:
             documents = self.db.get_all_documents()
             if not documents:
                 logger.warning("没有文档可用于构建索引")
+                with self._lock:
+                    self._snapshot = None
+                    self.document_ids = []
                 return
 
             embeddings = []
-            self.document_ids = []
-            
+            doc_ids = []
+
             for doc in documents:
                 if doc.get('embedding'):
                     embeddings.append(doc['embedding'])
-                    self.document_ids.append(doc['id'])
+                    doc_ids.append(doc['id'])
                 else:
                     # 如果没有嵌入向量，生成一个
                     logger.warning(f"文档 {doc['id']} 缺少嵌入向量，正在生成...")
                     text_for_embedding = f"{doc['content']} {' '.join(doc.get('keywords', []))}"
                     embedding = embed_input(text_for_embedding)
-                    
+
                     # 更新数据库
                     self.db.update_document(doc['id'], embedding=embedding)
-                    
+
                     embeddings.append(embedding)
-                    self.document_ids.append(doc['id'])
+                    doc_ids.append(doc['id'])
 
             if embeddings:
                 # 创建FAISS索引
                 embeddings_array = np.array(embeddings).astype('float32')
                 dimension = embeddings_array.shape[1]
-                self.index = faiss.IndexFlatIP(dimension)  # 内积相似度
-                self.index.add(embeddings_array)
-                logger.info(f"构建向量索引完成，包含 {len(embeddings)} 个向量")
+                index = faiss.IndexFlatIP(dimension)  # 内积相似度
+                index.add(embeddings_array)
+
+                # 原子替换快照（查询要么读旧快照，要么读新快照，绝不读中间状态）
+                with self._lock:
+                    self._index_version += 1
+                    self.index = index
+                    self.document_ids = doc_ids
+                    self._snapshot = (index, tuple(doc_ids), self._index_version)
+                logger.info(
+                    f"构建向量索引完成，包含 {len(embeddings)} 个向量，version={self._index_version}"
+                )
             else:
                 logger.warning("没有有效的嵌入向量，无法构建索引")
 
         except Exception as e:
             logger.error(f"构建向量索引失败: {e}")
+            # E6：失败时保留旧快照（若有），不破坏正在服务的查询
             raise
 
     async def search(self, query: str, top_k: int = 3, category: str = None) -> List[Dict]:
-        """搜索相关文档"""
-        if not self.initialized or self.index is None:
+        """搜索相关文档（E6：阈值过滤 + 候选边界；低于阈值的结果不返回）"""
+        if not self.initialized:
             logger.warning("知识库服务未初始化或索引不可用")
             return []
 
+        with self._lock:
+            snapshot = self._snapshot
+        if snapshot is None:
+            logger.warning("索引快照不可用（初始化为空或构建失败）")
+            return []
+
+        index, doc_ids, version = snapshot
         try:
             # 生成查询的嵌入向量
             query_embedding = embed_input(query)
             query_array = np.array([query_embedding]).astype('float32')
-            
-            # 向量搜索
-            scores, indices = self.index.search(query_array, min(top_k * 2, len(self.document_ids)))  # 多检索一些候选
-            
+
+            # 关键词预过滤候选（只缩减候选集，不绕过相似度阈值）
+            candidate_ids = None
+            if self.enable_keyword_prefilter:
+                candidate_ids = self._keyword_candidates(query, doc_ids)
+
+            if candidate_ids is not None:
+                # 预过滤启用：必须全量评估，确保候选文档不被 top-k 截断漏检
+                k = len(doc_ids)
+            else:
+                k = min(max(top_k * 2, 1), len(doc_ids), self.max_candidates)
+            scores, indices = index.search(query_array, k)
+
             results = []
             for score, idx in zip(scores[0], indices[0]):
-                if idx < len(self.document_ids):
-                    doc_id = self.document_ids[idx]
-                    doc = self.db.get_document(doc_id)
-                    
-                    if doc:
-                        # 如果指定了分类过滤
-                        if category and doc.get('category') != category:
-                            continue
-                            
-                        doc['score'] = float(score)
-                        doc['rank'] = len(results) + 1
-                        results.append(doc)
-                        
-                        # 达到所需数量就停止
-                        if len(results) >= top_k:
-                            break
-            
+                if idx < 0 or idx >= len(doc_ids):
+                    continue
+                doc_id = doc_ids[idx]
+                if candidate_ids is not None and doc_id not in candidate_ids:
+                    continue  # 预过滤候选之外不检索
+                if float(score) < self.min_score:
+                    continue  # 低于阈值 = 无可靠依据，不能进入回答上下文
+                doc = self.db.get_document(doc_id)
+                if not doc:
+                    continue
+                if category and doc.get('category') != category:
+                    continue
+                doc['score'] = float(score)
+                doc['rank'] = len(results) + 1
+                doc['source_version'] = f"index-{version}"
+                results.append(doc)
+                if len(results) >= top_k:
+                    break
+
             return results
-            
+
         except Exception as e:
             logger.error(f"搜索知识库失败: {e}")
             return []
+
+    def _keyword_candidates(self, query: str, doc_ids) -> Optional[set]:
+        """关键词预过滤：query 命中文档 keywords 的作为优先候选；无命中回退 None(全部)。"""
+        hits = set()
+        for doc_id in doc_ids:
+            doc = self.db.get_document(doc_id)
+            if not doc:
+                continue
+            keywords = doc.get("keywords") or []
+            if any(str(kw) in query for kw in keywords):
+                hits.add(doc_id)
+        return hits or None
+
+    async def search_structured(self, query: str, top_k: int = 3,
+                                category: str = None) -> List[Dict]:
+        """E6：结构化检索结果（EvidenceReader 输入：文档ID/片段/分数/索引版本/排名）。"""
+        rows = await self.search(query, top_k=top_k, category=category)
+        return [
+            {
+                "document_id": int(r["id"]),
+                "category": r.get("category", ""),
+                "snippet": str(r.get("content", ""))[:200],
+                "score": float(r.get("score", 0.0)),
+                "source_version": r.get("source_version", "index-0"),
+                "rank": int(r.get("rank", i + 1)),
+            }
+            for i, r in enumerate(rows)
+        ]
 
     async def add_document(self, content: str, category: str, keywords: List[str] = None) -> bool:
         """添加新文档"""
