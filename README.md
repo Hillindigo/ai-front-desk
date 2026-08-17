@@ -82,6 +82,13 @@ pip install -r requirements.txt
 
 复制 `.env.example` 为 `.env`，填写当前模型提供商所需的环境变量。不要把真实密钥提交到 Git。
 
+**没有可用模型 key 时**：应用可以降级启动（页面/API 可访问，聊天返回稳定错误提示）。
+仅做功能/界面验证可用 Fake 模式：
+
+```bash
+MODEL_PROVIDER=fake EMBEDDING_PROVIDER=fake python app.py
+```
+
 ### 4. 启动服务
 
 ```bash
@@ -97,25 +104,37 @@ API 文档：
 
 ## 页面与接口
 
-- `/`：AI Front Desk 对话入口
+- `/`：AI Front Desk 对话入口（会话 ID 保存在浏览器 localStorage）
 - `/knowledge`：知识库运营
 - `/technician`：服务人员状态（兼容旧 API 路径）
 - `/technician_schedule`：服务人员排班（兼容旧 API 路径）
 - `/user_behavior`：客户行为分析
 - `/admin`：运营概览
-- `/chat/stream`：流式对话接口
+- `/chat/stream`：流式对话接口（兼容入口；带 `conversation_id` 转发到指定会话，不带则使用默认演示会话）
+
+### 会话 API（Phase B）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/conversations` | 创建会话，返回 `conversation_id` |
+| POST | `/api/v1/conversations/{id}/turns` | 发送一轮消息（流式返回） |
+| GET | `/api/v1/conversations/{id}` | 获取会话元数据与最近消息 |
+
+- 会话与消息持久化到 SQLite，服务重启后可按 `conversation_id` 恢复。
+- URL 中的 `conversation_id` 是会话主标识；服务端校验会话存在与归属（`user_id`）。
 
 ## 目录结构
 
 ```text
 ai-front-desk/
+├── application/            # 会话运行时（ConversationSession/SessionManager/消息缓冲）
 ├── agents/                 # 任务路由、咨询、预约和行为分析 Agent
-├── api/                    # 对外 API 与响应模型
+├── api/                    # 对外 API 与响应模型（含会话 API）
 ├── config/                 # 设置、模型和数据库配置
 ├── db/                     # SQLAlchemy 模型与 Repository
 ├── services/               # 知识库、预约、推荐和行为服务
 ├── web/                    # 页面路由、模板和静态资源
-├── tests/                  # Agent 与业务流程测试
+├── tests/                  # Agent、契约、会话隔离与并发测试
 ├── app.py                  # FastAPI 入口
 ├── requirements.txt        # Python 依赖
 └── .env.example            # 环境变量模板
@@ -135,5 +154,7 @@ pytest -q
 python -m compileall agents api config db services web app.py
 ```
 
-如果本地没有配置可用的模型提供商，涉及 LLM 的测试可能无法完整运行；这不等同于业务代码已经通过生产验收。
+- 测试默认运行在 `MODEL_PROVIDER=fake` 模式（零真实 LLM/Embedding 调用，可离线）。
+- 测试使用独立临时 SQLite 数据库，不污染本地 `data/` 数据。
+- 无真实模型 key 时应用可降级启动，聊天返回稳定错误提示。
 
