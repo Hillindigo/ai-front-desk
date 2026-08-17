@@ -108,3 +108,66 @@ T1(依赖) → T2(tag) → T3(FakeLLM) → T4(conftest) → T5(现有测试绿) 
    以上 Phase D 统一 API 时修复。
 4. **测试与本地库共享**：tests 直接写 `data/ai_front_desk.db`（含 user_behavior 测试数据残留），测试间可能互相影响。Phase B 引入测试隔离（临时 DB / fixture 清理）。
 5. **`data/` 目录被 .gitignore 忽略**（`data/` 规则），仓库中无 .gitkeep；首次 clone 后运行需手动 `mkdir data`（或启动脚本处理）。
+
+## 7. Phase A 归档记录与 Phase B 交接
+
+### 7.1 归档状态
+
+Phase A 已完成并建立基线。其目标是固化当前行为基线，建立无真实 LLM 的测试工具链，修复明显的安全与日志问题，为后续会话隔离打基础。
+
+已完成事项：
+
+- Fake LLM / Fake Embedding 测试模式。
+- API 契约测试。
+- CORS 来源配置化，移除 `*` + credentials 的组合。
+- 指定业务文件中的 `print()` 清理为 `logging`。
+- fake 模式下的启动、页面、文档和核心接口验证。
+- Git tag `phase-a-baseline`。
+
+Phase A 文档记录的测试结果为：
+
+```text
+30 passed, 10 skipped, 0 failed
+```
+
+2026-08-17 本轮在项目根目录设置 `PYTHONPATH` 后复核得到：
+
+```text
+30 passed, 10 skipped, 7 warnings
+```
+
+本轮验证边界：
+
+- 直接执行环境中的 `pytest -q` 会因项目根目录未进入导入路径而出现 `ModuleNotFoundError`。
+- 当前 `python` 指向另一个 Python 3.14 环境，该环境没有安装 pytest。
+- 后续应固定可复现的测试入口，不能只记录“某次环境中测试通过”。
+- 10 个 skip 不是功能完成证明，必须保留 skip 原因并在对应阶段重写或解除。
+
+### 7.2 Phase A 遗留问题分级
+
+| 编号 | 遗留问题 | 影响 | 当前处理方向 |
+|---|---|---|---|
+| A-R1 | 默认 `MODEL_PROVIDER=azure` 且无 key 时，启动初始化会失败 | 应用无法在缺少模型配置时启动 | 评估初始化降级，让应用可启动并显式报告知识库不可用；具体阶段待定 |
+| A-R2 | `user_behavior` 测试与当前实现 API 脱节，已整体 skip | 行为记录组件没有被测试证明 | 在行为组件收口阶段按真实 API 重写测试，不把 skip 当作通过 |
+| A-R3 | `/api/task/classify`、`/api/appointment/create`、`/api/consultation/ask` 存在已固化的接口缺陷 | 相关接口当前不能作为正常业务契约使用 | 后续统一 API/编排阶段修复，并同步前端和文档 |
+| A-R4 | 测试共享 `data/ai_front_desk.db`，测试间可能互相影响 | 测试结果不完全隔离，可能污染本地数据 | Phase B 优先引入临时 DB 或 fixture 清理 |
+| A-R5 | `data/` 被忽略且无 `.gitkeep` | 首次 clone 后目录可能不存在 | 在启动/测试基础设施阶段决定由脚本、初始化逻辑或测试 fixture 创建 |
+
+### 7.3 Phase B 交接重点
+
+Phase B 的主题是“会话隔离 + 消息持久化”，目标是消除不同用户/会话之间共享预约草稿、消息历史和 Agent 状态的问题。
+
+Phase B 计划必须至少覆盖：
+
+1. 先处理 A-R4 测试数据库隔离问题，保证后续隔离测试可信。
+2. 设计 `conversations` 和 `messages` 数据边界，并明确用户、会话和消息的归属关系。
+3. 用 `ConversationSession` 或等价的会话对象替换聊天入口中的全局单例状态。
+4. 从 `InMemoryChatMessageHistory` 迁移到项目自管消息列表和数据库持久化，避免继续把恢复能力绑定在 Agent 实例内存上。
+5. 会话恢复时从数据库加载最近消息，并明确加载数量、排序和异常处理规则。
+6. 同一会话需要有并发控制；不同会话不能共享锁、预约草稿或历史消息。
+7. 增加新会话 API，同时保留旧 `/chat/stream` 的薄兼容包装，避免一次性打碎现有页面。
+8. 前端用 `localStorage` 或等价方式保存 `conversation_id`，聊天请求显式携带会话标识。
+9. 增加两个会话互不污染、服务重启后可恢复、旧页面仍可聊天的测试。
+10. 明确哪些 Phase A 遗留问题纳入本阶段，哪些继续延期，并给出理由。
+
+Phase B 不应在没有必要性和验收标准的情况下同时引入完整长期记忆系统、复杂摘要版本链、向量记忆检索或微服务拆分。
