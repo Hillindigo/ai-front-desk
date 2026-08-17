@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.knowledge_service import KnowledgeService
 from services.technician_service import TechnicianService
 from services.recommendation_service import RecommendationService
+from config.settings import settings
 from typing import List, Optional
 import logging
 import asyncio
@@ -76,10 +77,10 @@ def create_app() -> FastAPI:
         redoc_url="/redoc"
     )
 
-    # 添加CORS中间件
+    # 添加CORS中间件（来源由 config/settings.py 管理，环境变量 CORS_ORIGINS）
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 生产环境中应该设置具体的域名
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
