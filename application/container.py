@@ -53,7 +53,7 @@ class Container:
             agent_factory = _default_agent_factory
 
         self.workflows = {
-            IntentType.APPOINTMENT: AppointmentWorkflow(),
+            IntentType.APPOINTMENT: AppointmentWorkflow(self.appointment_service),
             IntentType.CONSULTATION: ConsultationWorkflow(),
             IntentType.UNRELATED: UnrelatedWorkflow(),
         }

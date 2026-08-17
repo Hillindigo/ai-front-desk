@@ -95,6 +95,38 @@ class TestRequestId:
             events.append(envelope)
         assert events[0].run_id and events[0].run_id != ""
 
+    @pytest.mark.asyncio
+    async def test_duplicate_request_id_replays_without_duplicate_messages(self):
+        orch = make_orchestrator()
+        s = get_session_manager().create_conversation(user_id="u1")
+
+        first = []
+        async for event in orch.handle_turn(s.conversation_id, "u1", "你好", request_id="same-request"):
+            first.append(event)
+        second = []
+        async for event in orch.handle_turn(s.conversation_id, "u1", "你好", request_id="same-request"):
+            second.append(event)
+
+        messages = get_session_manager().repository.get_recent_messages(s.conversation_id)
+        assert len(messages) == 2
+        assert second[0].data["replayed"] is True
+        assert second[-1].type == EventType.RUN_COMPLETED
+        assert second[-1].data["replayed"] is True
+
+    @pytest.mark.asyncio
+    async def test_duplicate_request_id_with_different_content_is_conflict(self):
+        orch = make_orchestrator()
+        s = get_session_manager().create_conversation(user_id="u1")
+
+        async for _ in orch.handle_turn(s.conversation_id, "u1", "你好", request_id="same-request"):
+            pass
+        events = []
+        async for event in orch.handle_turn(s.conversation_id, "u1", "谢谢", request_id="same-request"):
+            events.append(event)
+
+        assert events[-1].type == EventType.RUN_FAILED
+        assert events[-1].data["error"] == "IDEMPOTENCY_CONFLICT"
+
 
 class TestFaultInjection:
     @pytest.mark.asyncio

@@ -79,6 +79,8 @@ class TestEventStreamOrder:
         types = [e.type for e in events]
         assert EventType.INTENT_DETECTED in types
         assert EventType.WORKFLOW_STARTED in types
+        assert EventType.TOOL_STARTED in types
+        assert EventType.TOOL_RESULT in types
         assert EventType.ASSISTANT_DELTA in types
 
     @pytest.mark.asyncio
@@ -124,6 +126,28 @@ class TestEventStreamOrder:
         assert events[-1].data.get("error") == "INTERNAL_ERROR"
         terminals = [e for e in events if e.type in (EventType.RUN_COMPLETED, EventType.RUN_FAILED)]
         assert len(terminals) == 1
+
+    @pytest.mark.asyncio
+    async def test_domain_error_becomes_structured_failure(self):
+        """预约领域冲突不能被伪装成普通 assistant 成功。"""
+        from services.appointment_domain import AppointmentDomainError
+
+        orch = make_orchestrator()
+
+        class ConflictWorkflow:
+            async def run(self, *a, **k):
+                raise AppointmentDomainError("APPOINTMENT_CONFLICT", "slot busy")
+                yield  # pragma: no cover
+
+        from application.contracts import IntentType
+        orch.workflows = {IntentType.APPOINTMENT: ConflictWorkflow()}
+        s = get_session_manager().create_conversation(user_id="u1")
+        events = await collect_events(orch, s.conversation_id, "u1", "我想预约肩颈放松")
+
+        assert events[-1].type == EventType.RUN_FAILED
+        assert events[-1].data["error"] == "APPOINTMENT_CONFLICT"
+        tool_results = [e for e in events if e.type == EventType.TOOL_RESULT]
+        assert tool_results[-1].data["success"] is False
 
 
 class TestSseFraming:

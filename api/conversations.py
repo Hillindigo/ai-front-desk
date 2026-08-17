@@ -34,9 +34,15 @@ def _resolve_session(conversation_id: str, user_id: str):
     try:
         return get_session_manager().get_or_create_session(conversation_id, user_id=user_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在"},
+        )
     except PermissionError:
-        raise HTTPException(status_code=403, detail="会话归属不符")
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "CONVERSATION_ACCESS_DENIED", "message": "会话归属不符"},
+        )
 
 
 @router.post("")
@@ -73,7 +79,10 @@ async def send_turn(conversation_id: str, request: TurnRequest):
     失败以 run_failed 终止事件结束，不中途切换为未定义 JSON。
     """
     if not request.message or not request.message.strip():
-        raise HTTPException(status_code=422, detail="消息不能为空")
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_INPUT", "message": "消息不能为空"},
+        )
 
     _resolve_session(conversation_id, request.user_id)
 

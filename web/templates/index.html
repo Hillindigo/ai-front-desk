@@ -535,39 +535,23 @@
 
     function updateLastBotMessage(text) {
         if (lastBotBubble) {
-            // 用正则分割所有 [THOUGHT]、[REPLY]、[STATE] 标签及其内容
-            const pattern = /(\[THOUGHT[^\]]*\][\s\S]*?)(?=\[THOUGHT|\[REPLY|\[STATE|$)|(\[REPLY[^\]]*\][\s\S]*?)(?=\[THOUGHT|\[REPLY|\[STATE|$)/g;
-            let result = [];
-            let match;
-            while ((match = pattern.exec(text)) !== null) {
-                if (match[1]) {
-                    // THOUGHT - 思考过程，用淡色显示
-                    const thoughtText = match[1].replace(/\[THOUGHT[^\]]*\]/, '').trim().replace(/\n/g, '<br>');
-                    result.push(`<div class="bot-thought">${thoughtText}</div>`);
-                } else if (match[2]) {
-                    // REPLY - 最终回复，使用突出颜色
-                    const replyText = match[2].replace(/\[REPLY[^\]]*\]/, '').trim().replace(/\n/g, '<br>');
-                    
-                    // 检查回复类型并应用不同样式
-                    let styledReply = replyText;
-                    if (replyText.includes('预约成功') || replyText.includes('已为您预约')) {
-                        // 成功消息
-                        styledReply = `<div class="bot-success">✅ ${replyText}</div>`;
-                    } else if (replyText.includes('抱歉') || replyText.includes('失败') || replyText.includes('不空闲')) {
-                        // 错误消息
-                        styledReply = `<div class="bot-error">❌ ${replyText}</div>`;
-                    } else if (replyText.includes('请问') || replyText.includes('需要')) {
-                        // 询问消息
-                        styledReply = `<div class="bot-info">💬 ${replyText}</div>`;
-                    } else {
-                        // 普通回复，使用突出的颜色
-                        styledReply = `<div class="bot-reply">${replyText}</div>`;
-                    }
-                    
-                    result.push(styledReply);
-                }
+            // Phase D：SSE 已提供纯用户可见文本，不再解析旧 [THOUGHT]/[REPLY] 标记。
+            const reply = document.createElement('div');
+            const normalized = text || '';
+            if (normalized.includes('预约成功') || normalized.includes('已为您预约')) {
+                reply.className = 'bot-success';
+                reply.textContent = `✅ ${normalized}`;
+            } else if (normalized.includes('抱歉') || normalized.includes('失败') || normalized.includes('不空闲')) {
+                reply.className = 'bot-error';
+                reply.textContent = `❌ ${normalized}`;
+            } else if (normalized.includes('请问') || normalized.includes('需要')) {
+                reply.className = 'bot-info';
+                reply.textContent = `💬 ${normalized}`;
+            } else {
+                reply.className = 'bot-reply';
+                reply.textContent = normalized;
             }
-            lastBotBubble.innerHTML = result.join('');
+            lastBotBubble.replaceChildren(reply);
             
             // 内容更新后自动滚动
             requestAnimationFrame(() => {

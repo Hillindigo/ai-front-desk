@@ -34,8 +34,8 @@ def _cancel_reply(svc: AppointmentCommandService, conversation_id: str, user_id:
         svc.cancel(target["id"], user_id, reason="用户取消")
         name = target.get("service_type") or target.get("project") or "预约"
         return f"[REPLY][预约机器人]已为您取消{name}的预约。"
-    except AppointmentDomainError as e:
-        return f"[REPLY][预约机器人]取消失败：{e.message}"
+    except AppointmentDomainError:
+        raise
 
 
 def _confirm_reply(svc: AppointmentCommandService, conversation_id: str, user_id: str) -> str:
@@ -52,15 +52,16 @@ def _confirm_reply(svc: AppointmentCommandService, conversation_id: str, user_id
             svc.confirm(pending["id"], user_id, idempotency_key=f"{conversation_id}:{pending['id']}")
             return "[REPLY][预约机器人]预约确认成功！"
         return "[REPLY][预约机器人]该预约状态无法确认。"
-    except AppointmentDomainError as e:
-        return f"[REPLY][预约机器人]无法确认预约：{e.message}"
+    except AppointmentDomainError:
+        raise
 
 
 class AppointmentWorkflow:
     """预约工作流。"""
 
-    def __init__(self):
-        pass
+    def __init__(self, appointment_service: Optional[AppointmentCommandService] = None):
+        # 生产容器注入共享的无状态领域服务；保留默认构造仅供旧测试/兼容调用。
+        self.appointment_service = appointment_service
 
     async def run(
         self,
@@ -71,22 +72,24 @@ class AppointmentWorkflow:
     ) -> AsyncGenerator[str, None]:
         sub = intent.sub_action
         if sub == AppointmentSubAction.CANCEL:
-            svc = AppointmentCommandService()
+            owns_service = self.appointment_service is None
+            svc = self.appointment_service or AppointmentCommandService()
             try:
-                reply = _cancel_reply(svc, session.conversation_id, user_id)
-                yield reply
+                yield _cancel_reply(svc, session.conversation_id, user_id)
             finally:
-                svc.close()
+                if owns_service:
+                    svc.close()
             # 取消成功（或无可取消）后重置预约上下文，避免 sync_draft 复活草稿
             self._clear_history(session)
             return
         if sub == AppointmentSubAction.CONFIRM:
-            svc = AppointmentCommandService()
+            owns_service = self.appointment_service is None
+            svc = self.appointment_service or AppointmentCommandService()
             try:
-                reply = _confirm_reply(svc, session.conversation_id, user_id)
-                yield reply
+                yield _confirm_reply(svc, session.conversation_id, user_id)
             finally:
-                svc.close()
+                if owns_service:
+                    svc.close()
             # 确认成功后预约不再活跃，重置上下文（sync_draft 不会复活草稿）
             self._clear_history(session)
             return

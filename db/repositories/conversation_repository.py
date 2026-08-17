@@ -157,6 +157,58 @@ class ConversationRepository:
             session.refresh(msg)
             return _message_to_dict(msg)
 
+    def get_turn_by_request_id(
+        self,
+        conversation_id: str,
+        request_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """查找已处理的请求，用于 turns 重试去重。
+
+        请求 ID 保存在 user 消息 metadata 中，assistant 消息紧随其后。
+        该查询只依赖持久化消息，不依赖进程内缓存，因此同一进程重建会话后
+        仍能返回原结果。跨进程一致性仍由 Phase D 的 SQLite 单进程边界约束。
+        """
+        if not request_id:
+            return None
+        with self.session_manager.session_scope() as session:
+            rows = (
+                session.query(Message)
+                .filter(
+                    Message.conversation_id == conversation_id,
+                    Message.role == "user",
+                )
+                .order_by(Message.sequence.desc())
+                .all()
+            )
+            for user_row in rows:
+                metadata = {}
+                if user_row.metadata_json:
+                    try:
+                        metadata = json.loads(user_row.metadata_json) or {}
+                    except (ValueError, TypeError):
+                        metadata = {}
+                if metadata.get("client_request_id") != request_id:
+                    continue
+
+                assistant_row = (
+                    session.query(Message)
+                    .filter(
+                        Message.conversation_id == conversation_id,
+                        Message.role == "assistant",
+                        Message.sequence > user_row.sequence,
+                    )
+                    .order_by(Message.sequence.asc())
+                    .first()
+                )
+                if assistant_row is None:
+                    # 用户消息已经落库但本轮未完成，允许客户端重试恢复执行。
+                    return None
+                return {
+                    "user": _message_to_dict(user_row),
+                    "assistant": _message_to_dict(assistant_row) if assistant_row else None,
+                }
+        return None
+
     def get_recent_messages(self, conversation_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """按会话返回最近 N 条消息，按 sequence 升序（恢复历史用）。"""
         with self.session_manager.session_scope() as session:

@@ -20,10 +20,27 @@ router = APIRouter(prefix="/api/consultation", tags=["咨询服务"])
 async def ask_consultation(request: ConsultationRequest):
     """提交咨询问题（统一咨询路径）"""
     try:
-        from agents.consultant_agent import ConsultantAgent
+        from api.chat_handler import get_container
+        from application.contracts import EventType
 
-        agent = ConsultantAgent(session_id="legacy-consult")
-        result = await agent.consult(request.question)
+        container = get_container()
+        session = container.session_manager.get_or_create_default(request.user_id)
+        chunks = []
+        async for event in container.orchestrator.handle_turn(
+            session.conversation_id,
+            request.user_id,
+            request.question,
+            request_id=None,
+        ):
+            if event.type == EventType.ASSISTANT_DELTA:
+                chunks.append(event.data.get("text", ""))
+            elif event.type == EventType.RUN_FAILED:
+                raise HTTPException(
+                    status_code=500,
+                    detail={"code": event.data.get("error", "INTERNAL_ERROR"),
+                            "message": event.data.get("message", "咨询服务异常")},
+                )
+        result = "".join(chunks)
         return DataResponse(
             message="咨询处理成功",
             data={"answer": result, "question": request.question},
