@@ -1,7 +1,7 @@
 # Phase A 执行计划（基线与安全）
 
 > 日期：2026-08-17 ｜ 来源：《8.17-重构计划评审与我的改造方案.md》Phase A
-> 状态：计划先行，确认后执行
+> 状态：**✅ 已完成（2026-08-17）**，基线 tag: `phase-a-baseline`
 
 ## 0. 目标与完成定义
 
@@ -14,6 +14,17 @@
 4. 业务代码 `print()` 已清理清单清零（指定文件）
 5. `uvicorn` 可启动、`/docs` 可访问
 6. `git tag phase-a-baseline` 记录基线
+
+**执行结果（2026-08-17）**：
+
+| 完成定义 | 结果 |
+|---|---|
+| 1. pytest 全绿零真实 LLM | ✅ 30 passed, 10 skipped, 0 failed（fake 模式） |
+| 2. API 契约测试 | ✅ tests/test_api_contract.py 10 项（含 2 个已知缺陷基线） |
+| 3. CORS 配置化 | ✅ settings.py + CORS_ORIGINS，验证同源放行/跨源拒绝 |
+| 4. print 清零 | ✅ 13 文件 23 处 print → logging（分级 error/info/debug/warning） |
+| 5. uvicorn 启动 /docs | ✅ fake 模式启动验证：/、/docs、/chat/stream、/api/knowledge 全 200 |
+| 6. git 基线 | ✅ tag `phase-a-baseline`；期间 7 个本地 commit |
 
 ## 1. 环境侦查结论（2026-08-17 实测）
 
@@ -84,3 +95,16 @@
 ## 5. 执行顺序
 
 T1(依赖) → T2(tag) → T3(FakeLLM) → T4(conftest) → T5(现有测试绿) → T6(契约测试) → T7(CORS) → T8(日志) → T9(启动验证+收尾 tag)
+
+## 6. 执行中发现的已知问题（留待后续 Phase）
+
+1. **默认 MODEL_PROVIDER=azure 且无 API key 时应用无法启动**（startup 初始化抛 Missing credentials）。Phase A 不做行为变更；启动/演示需显式设 `MODEL_PROVIDER`（fake 或真实 provider + .env）。建议 Phase B/D 将初始化失败降级为"应用可启动、知识库不可用"。
+2. **user_behavior 测试与实现 API 脱节**（record_behavior 签名、get_recent_behavior 方法名、返回结构均不匹配），已整体 skip 并记录审计说明；`BehaviorRecorder.get_user_behaviors` 调用 repository 缺 user_id 参数（真实接口缺陷）。Phase B/D 行为组件收口时按真实 API 重写测试。
+3. **API 缺陷基线（契约测试固化）**：
+   - `POST /api/task/classify`：请求模型只有 `text` 字段，handler 访问 `request.message`（api/task.py:22）→ 恒 400。
+   - `POST /api/appointment/create`：调用不存在的 `AppointmentAgent.process_appointment_request` → 恒 400。
+   - `POST /api/consultation/ask`：调用不存在的 `ConsultantAgent.process_consultation` → 恒 400。
+   - 服务人员 prefix 是复数 `/api/technicians`（与文档/前端单数用法不一致）。
+   以上 Phase D 统一 API 时修复。
+4. **测试与本地库共享**：tests 直接写 `data/ai_front_desk.db`（含 user_behavior 测试数据残留），测试间可能互相影响。Phase B 引入测试隔离（临时 DB / fixture 清理）。
+5. **`data/` 目录被 .gitignore 忽略**（`data/` 规则），仓库中无 .gitkeep；首次 clone 后运行需手动 `mkdir data`（或启动脚本处理）。
