@@ -37,10 +37,9 @@ def test_chat_stream_contract(client):
 
 
 def test_chat_legacy_contract(client):
-    """/chat 兼容接口返回非空文本流。"""
+    """Phase D D7：/chat 重复端点已删除（返回 404），只保留 /chat/stream 薄转发。"""
     resp = client.post("/chat", json={"message": "你好"})
-    assert resp.status_code == 200
-    assert len(resp.text) > 0
+    assert resp.status_code == 404
 
 
 # ---------- 任务分类 ----------

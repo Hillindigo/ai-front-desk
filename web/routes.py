@@ -41,18 +41,6 @@ async def chat_stream_endpoint(chat: ChatRequest):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 
-@router.post("/chat", summary="兼容性聊天接口")
-async def chat_endpoint(chat: ChatRequest):
-    """兼容性聊天接口，建议使用/chat/stream（Phase B 兼容包装）"""
-    async def token_generator():
-        async for token in ProcessUserInput_stream(
-            chat.message,
-            conversation_id=chat.conversation_id,
-            user_id=chat.user_id,
-        ):
-            yield token
-    return StreamingResponse(token_generator(), media_type="text/plain")
-
 @router.get("/user_behavior", response_class=HTMLResponse, summary="用户行为分析页面")
 async def user_behavior_page(request: Request):
     """用户行为分析页面"""
