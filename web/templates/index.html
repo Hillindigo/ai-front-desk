@@ -599,24 +599,50 @@
         addMessage('', 'bot');
         lastBotBubble = chatBox.querySelector('.message.bot:last-child .bubble');
         
-        try {
-            await ensureConversation();
-            let res = await fetch('/chat/stream', {
+        // Phase D：SSE 事件流解析（turns 规范入口）
+        async function sendTurn(convId) {
+            return await fetch(`/api/v1/conversations/${convId}/turns`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: text, conversation_id: conversationId, user_id: 'default_user'})
+                body: JSON.stringify({message: text, user_id: 'default_user'})
             });
+        }
+        
+        // 解析 SSE 事件流：按空行切块，事件名 + JSON data
+        async function parseSSE(reader, onEvent) {
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, {stream: true});
+                let idx;
+                while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                    const block = buffer.slice(0, idx);
+                    buffer = buffer.slice(idx + 2);
+                    let eventName = 'message';
+                    let dataStr = '';
+                    for (const line of block.split('\n')) {
+                        if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+                        else if (line.startsWith('data: ')) dataStr += line.slice(6);
+                    }
+                    if (dataStr) {
+                        try { onEvent(eventName, JSON.parse(dataStr)); } catch (e) { /* 忽略坏包 */ }
+                    }
+                }
+            }
+        }
+        
+        try {
+            await ensureConversation();
+            let res = await sendTurn(conversationId);
             
             // 会话不存在/失效：重建会话并重发一次
             if (res.status === 404 || res.status === 403) {
                 conversationId = null;
                 localStorage.removeItem('conversation_id');
                 await ensureConversation();
-                res = await fetch('/chat/stream', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: text, conversation_id: conversationId, user_id: 'default_user'})
-                });
+                res = await sendTurn(conversationId);
             }
             
             if (!res.ok || !res.body) {
@@ -625,16 +651,20 @@
             
             hideTypingIndicator();
             
-            const reader = res.body.getReader();
             let botMsg = '';
-            let decoder = new TextDecoder();
-            
-            while (true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                botMsg += decoder.decode(value, {stream: true});
-                updateLastBotMessage(botMsg);
-            }
+            await parseSSE(res.body.getReader(), (eventName, data) => {
+                if (eventName === 'assistant_delta' && data.text) {
+                    botMsg += data.text;
+                    updateLastBotMessage(botMsg);
+                } else if (eventName === 'run_failed') {
+                    // 稳定错误展示（事件流内失败）
+                    botMsg += '\n[错误] ' + (data.message || '处理失败，请稍后再试');
+                    updateLastBotMessage(botMsg);
+                } else if (eventName === 'run_completed') {
+                    // 本轮完成：无需额外处理
+                }
+            });
+            updateLastBotMessage(botMsg);
         } catch (error) {
             hideTypingIndicator();
             lastBotBubble.innerHTML = '抱歉，服务暂时不可用，请稍后再试。';
