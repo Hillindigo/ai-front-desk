@@ -112,16 +112,33 @@ API 文档：
 - `/admin`：运营概览
 - `/chat/stream`：流式对话接口（兼容入口；带 `conversation_id` 转发到指定会话，不带则使用默认演示会话）
 
-### 会话 API（Phase B）
+### 会话 API（Phase B/D）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/v1/conversations` | 创建会话，返回 `conversation_id` |
-| POST | `/api/v1/conversations/{id}/turns` | 发送一轮消息（流式返回） |
+| POST | `/api/v1/conversations/{id}/turns` | 发送一轮消息（**SSE 事件流**，规范编排入口） |
 | GET | `/api/v1/conversations/{id}` | 获取会话元数据与最近消息 |
 
 - 会话与消息持久化到 SQLite，服务重启后可按 `conversation_id` 恢复。
 - URL 中的 `conversation_id` 是会话主标识；服务端校验会话存在与归属（`user_id`）。
+- `/chat/stream` 为兼容薄转发（无 `conversation_id` 时使用默认演示会话）；`/chat` 已删除（Phase D）。
+
+#### turns 事件协议（Phase D，`protocol_version: v1`）
+
+事件流**只描述当前轮次**：一次 turns 请求 = 一个 `run_id`，`run_started` 首发、唯一 `run_completed`/`run_failed` 终止；跨轮预约状态由持久化草稿承载，不靠事件重放。
+
+```text
+event: run_started      data: {"protocol_version":"v1","run_id":"...","sequence":1,"type":"run_started",...}
+event: intent_detected  data: {...意图/子动作/置信度...}
+event: workflow_started data: {"workflow":"appointment|consultation|unrelated"}
+event: assistant_delta  data: {"text":"用户可见增量"}
+event: run_completed    data: {"conversation_id":"...","message_id":"...","intent":{...}}
+```
+
+- 事件包必含：`protocol_version / event_id / run_id / conversation_id / sequence / type / timestamp / data`，`sequence` 单调递增。
+- 内部 `[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 标记不进入事件流（隐藏推理不外泄）。
+- 失败以唯一 `run_failed` 终止，不中途切换为未定义 JSON；错误码稳定（`INVALID_INPUT`、`CONVERSATION_NOT_FOUND`、`APPOINTMENT_CONFLICT`、`IDEMPOTENCY_CONFLICT`、`MODEL_UNAVAILABLE`、`TOOL_FAILED`、`INTERNAL_ERROR` 等）。
 
 ### 预约 API（Phase C）
 

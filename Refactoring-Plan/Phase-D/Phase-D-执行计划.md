@@ -695,3 +695,58 @@ Phase E 不应重新定义会话事件协议或预约核心状态机，而应在
 | 预约 Agent 互调 | `TaskClassificationAgent` 内 `AgentRouter` 回调链（D2 拆解对象） |
 
 **D0 结论**：基线可复现；D1 文件范围 = application/ 新契约模型 + api/core/errors.py + 对应契约测试；回滚点 = 6ad6520（修复后基线）。
+
+**D1~D9 执行结果（2026-08-17 完成）**：
+
+- **测试最终基线：170 passed, 10 skipped, 0 failed**（40 warnings：既有 DeprecationWarning/MovedIn20Warning），Fake 模式零真实 LLM/Embedding。
+- **提交记录（Phase D，11 个 commit）**：
+
+```
+Phase D(fix)-SQLite事务IMMEDIATE生效     （D0 基线 bug 修复，单独 commit）
+Phase D(test)-建立编排基线
+Phase D(feat)-定义应用层契约
+Phase D(feat)-新增统一会话编排
+Phase D(refactor)-接入依赖注入
+Phase D(feat)-统一流式事件协议
+Phase D(feat)-前端解析事件流
+Phase D(fix)-统一错误和行为记录
+Phase D(refactor)-删除重复兼容入口
+Phase D(test)-验证编排协议和故障恢复
+Phase D(docs)-记录PhaseD执行结果         （本提交）
+```
+
+- **完成定义核对**：
+
+功能完成：
+- [x] `ConversationOrchestrator.handle_turn` 唯一轮次编排入口（校验→落用户消息→规则/LLM 分类→工作流→落 assistant 消息）
+- [x] 意图/工作流/工具使用结构化模型（IntentClassification/EventEnvelope/ErrorCode）
+- [x] 确定性规则表 `application/intent_rules.py`（优先级/冲突→LLM 兜底/澄清；正/反/冲突例测试）
+- [x] Agent 不再互相直接调用；预约写入仍只经 Phase C 领域服务（取消/确认为确定性命令路径，不调 LLM）
+- [x] turns 为 SSE 事件流（v1：run_started 首发、唯一终止事件、sequence 单调、事件只描述当前轮次）
+- [x] `[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 不进入事件流、不落入持久化消息（clean_token 清洗，D4 测试证明）
+- [x] 错误码统一（`api/core` 映射到 HTTP/SSE；`run_failed` 唯一终止，不中途切换 JSON）
+- [x] A-R2 收口：`BehaviorRecorder` 注入式旁路，失败不阻断主流程（D6 测试证明）
+- [x] A-R3 收口：`/api/task/classify`（确定性规则）、`/api/consultation/ask`（统一咨询路径）修复为 200
+- [x] `/chat` 删除；`/chat/stream` 保留薄转发；`KnowledgeDBRouter`/`UserBehaviorDBRouter`/`local_db.py` 物理删除（0 引用）；`TechnicianDBRouter` 保留（A-R2 user_behavior 组件依赖，标记弃用）
+- [x] 前端切换事件解析（SSE 解析器 + run_failed 错误展示 + localStorage 会话保持）
+
+测试完成：
+- [x] Phase B/C 测试无回归（170 passed 含 B/C 全部）
+- [x] 事件顺序/唯一 terminal/失败/客户端断开/run_id 透传测试通过（D4/D8）
+- [x] 预约冲突、幂等、状态机仍通过 Phase C 测试
+- [x] 会话隔离、重启恢复、并发仍通过 Phase B 测试
+- [x] 行为记录失败、模型失败、工具失败、分类失败故障注入证据齐备（D6/D8）
+- [x] 10 个 skip 仍为 user_behavior 组件（A-R2 延期，原因不变）
+
+运行和文档：
+- [x] Fake 模式启动 + SSE HTTP 验收通过（事件序列 run_started→intent_detected→workflow_started→assistant_delta→run_completed）
+- [x] README / PROJECT_MEMORY.md / 本文件已同步
+- [x] `git diff --check` 通过
+- [x] 阶段提交未混入工作区无关改动
+
+- **删除清单结果**：`db/local_db.py` 删除；`KnowledgeDBRouter`/`UserBehaviorDBRouter` 删除；`/chat` 端点删除；`[THOUGHT]` 等标记在规范路径不再产出。
+- **保留兼容入口**：`/chat/stream`（薄转发）、`TechnicianDBRouter`（A-R2 依赖）、旧预约接口（领域适配器）。
+
+- **验证边界**：SQLite 单进程 + Fake 模式本地自动化与手工 HTTP 验收通过；真实模型、线上、鉴权、多进程**未验证**（明确记录，不冒充通过）。
+
+- **Phase E 交接项**：知识库相似度阈值、关键词预过滤、引用返回、重建锁（在 Phase D 的统一编排/错误/工具边界之上加固知识库可靠性，不重定义会话事件协议或预约状态机）。

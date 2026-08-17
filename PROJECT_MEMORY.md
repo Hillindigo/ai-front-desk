@@ -72,11 +72,14 @@ Repositories / Database
 当前必须记住的实现事实：
 
 1. 聊天链路已按会话运行（Phase B）：`api/chat_handler.py` 通过 `ConversationSession/SessionManager` 按 `conversation_id` 管理会话、消息持久化与并发锁；`/chat/stream` 是兼容包装，无 ID 时落到默认演示会话。
-2. `config/constants.py` 中的 `busy_periods_dict` 是进程级共享状态，已弃用（Phase C 后新主流程不再写入/读取），保留定义仅为兼容导出。
-3. 预约已领域化（Phase C）：独立 `Appointment`/`AppointmentEvent` 表、显式状态机（draft→pending_confirmation→confirmed / cancelled / expired）、`BEGIN IMMEDIATE` 事务内冲突校验与幂等键；`Agent` 通过领域服务完成预约，不再直接写 `technician_schedules` 或 `busy_periods_dict`。
-4. 数据库层同时存在 Repository、Router 和兼容层，后续需要按阶段删除重复入口，不能只叠加新层。
-5. 知识库索引仍由进程内服务管理，知识变更会触发重建；后续先解决可靠性和验证边界，不直接引入超出当前规模的复杂基础设施。
-6. 内部技术字段仍使用 `technician`，产品文案优先使用“服务人员”；除非阶段计划明确迁移，不要随意修改数据库字段命名。
+2. 统一编排（Phase D）：`application/orchestrator.py` 的 `ConversationOrchestrator.handle_turn` 是唯一轮次编排入口（校验会话→落用户消息→`IntentRouter` 分类→工作流→落 assistant 消息）；`application/container.py` 为依赖容器；`application/intent_rules.py` 是确定性意图规则表（规则优先，LLM 只兜底模糊输入）。
+3. 事件协议（Phase D）：`/api/v1/conversations/{id}/turns` 返回 SSE 事件流（`protocol_version: v1`），一次 turns = 一个 `run_id`，`run_started` 首发、唯一 `run_completed`/`run_failed` 终止；事件只描述当前轮次，跨轮状态由持久化草稿/预约实体承载；`[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 不进入事件流。
+4. `config/constants.py` 中的 `busy_periods_dict` 是进程级共享状态，已弃用（Phase C 后新主流程不再写入/读取），保留定义仅为兼容导出。
+5. 预约已领域化（Phase C）：独立 `Appointment`/`AppointmentEvent` 表、显式状态机（draft→pending_confirmation→confirmed / cancelled / expired）、`BEGIN IMMEDIATE` 事务内冲突校验与幂等键；`Agent` 通过领域服务完成预约，不再直接写 `technician_schedules` 或 `busy_periods_dict`。
+6. SQLite 事务使用自定义方言 `sqlite+immediate`（`db/base/immediate_dialect.py`）：所有事务 `BEGIN IMMEDIATE` 写锁抢占，防并发确认 lost update。
+7. 数据库层同时存在 Repository、Router 和兼容层（`TechnicianDBRouter` 仅剩 A-R2 user_behavior 组件使用），后续需要按阶段删除重复入口，不能只叠加新层。
+8. 知识库索引仍由进程内服务管理，知识变更会触发重建；后续先解决可靠性和验证边界，不直接引入超出当前规模的复杂基础设施。
+9. 内部技术字段仍使用 `technician`，产品文案优先使用“服务人员”；除非阶段计划明确迁移，不要随意修改数据库字段命名。
 
 ## 4. 重构目标和长期原则
 
