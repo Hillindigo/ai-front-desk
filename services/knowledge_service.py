@@ -122,12 +122,18 @@ class KnowledgeService:
                 text_for_embedding = f"{knowledge['content']} {' '.join(knowledge['keywords'])}"
                 embedding = embed_input(text_for_embedding)
                 
-                # 保存到数据库
+                # 保存到数据库（Phase F F1：默认知识以 published 状态播种，带来源标识）
                 self.db.add_document(
                     content=knowledge['content'],
                     category=knowledge['category'],
                     keywords=knowledge['keywords'],
-                    embedding=embedding
+                    embedding=embedding,
+                    title=knowledge.get('title', knowledge['category']),
+                    status="published",
+                    source_type="system_default",
+                    source_label="系统默认知识",
+                    created_by="system",
+                    document_version=1,
                 )
                 logger.debug(f"添加默认知识: {knowledge['content'][:50]}...")
                 
@@ -135,11 +141,11 @@ class KnowledgeService:
                 logger.error(f"添加默认知识失败: {e}")
 
     async def _build_vector_index(self):
-        """构建向量索引（E6：新索引完成后原子替换快照，查询不读半成品）"""
+        """构建向量索引（E6 快照原子替换；F1：只从 published 文档构建，草稿不入正式检索）"""
         try:
-            documents = self.db.get_all_documents()
+            documents = self.db.get_published_documents()
             if not documents:
-                logger.warning("没有文档可用于构建索引")
+                logger.warning("没有已发布文档可用于构建索引")
                 with self._lock:
                     self._snapshot = None
                     self.document_ids = []
@@ -229,6 +235,9 @@ class KnowledgeService:
                     continue  # 低于阈值 = 无可靠依据，不能进入回答上下文
                 doc = self.db.get_document(doc_id)
                 if not doc:
+                    continue
+                # F1：双保险——索引之外再校验当前状态必须是 published（归档/草稿不作为正式依据）
+                if str(doc.get("status", "published")) != "published":
                     continue
                 if category and doc.get('category') != category:
                     continue

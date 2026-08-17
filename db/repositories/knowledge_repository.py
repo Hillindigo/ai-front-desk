@@ -25,7 +25,13 @@ class KnowledgeRepository(BaseKnowledgeRepository):
         self.session_manager = session_manager
 
     def add_document(self, content: str, category: str, keywords: Optional[List[str]] = None, 
-                    embedding: Optional[List[float]] = None) -> int:
+                    embedding: Optional[List[float]] = None,
+                    title: Optional[str] = None,
+                    status: Optional[str] = "draft",
+                    source_type: Optional[str] = None,
+                    source_label: Optional[str] = None,
+                    created_by: Optional[str] = None,
+                    document_version: int = 1) -> int:
         """
         添加知识文档
         
@@ -34,6 +40,12 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             category: 文档分类
             keywords: 关键词列表
             embedding: 嵌入向量
+            title: 文档标题（Phase F）
+            status: 文档状态 draft/published/archived/failed（Phase F）
+            source_type: 来源类型（Phase F）
+            source_label: 来源可读标签（Phase F）
+            created_by: 创建人（Phase F）
+            document_version: 文档版本（Phase F）
             
         Returns:
             新创建的文档ID
@@ -43,7 +55,13 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                 content=content,
                 category=category,
                 keywords=keywords,
-                embedding=embedding
+                embedding=embedding,
+                title=title,
+                status=status,
+                source_type=source_type,
+                source_label=source_label,
+                created_by=created_by,
+                document_version=document_version,
             )
             session.add(document)
             session.flush()
@@ -86,6 +104,15 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                 query = query.filter(KnowledgeDocument.is_active == 1)
                 
             documents = query.all()
+            return [self._document_to_dict(doc) for doc in documents]
+
+    def get_published_documents(self) -> List[Dict[str, Any]]:
+        """获取已发布且未删除的文档（Phase F：正式检索索引只由此构建）。"""
+        with self.session_manager.session_scope() as session:
+            documents = session.query(KnowledgeDocument).filter(
+                KnowledgeDocument.is_active == 1,
+                KnowledgeDocument.status == "published",
+            ).all()
             return [self._document_to_dict(doc) for doc in documents]
 
     def update_document(self, doc_id: int, content: Optional[str] = None, category: Optional[str] = None, 
@@ -256,14 +283,24 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             return {category: count for category, count in result}
 
     def _document_to_dict(self, document: KnowledgeDocument) -> Dict[str, Any]:
-        """将文档对象转换为字典"""
+        """将文档对象转换为字典（Phase F：含治理字段，不含敏感/内部嵌入外的公开字段）"""
         return {
             'id': document.id,
+            'title': document.title,
             'content': document.content,
             'category': document.category,
             'keywords': document.keywords,
             'embedding': document.embedding,
+            'status': document.status,
+            'document_version': document.document_version,
+            'knowledge_version': document.knowledge_version,
+            'source_type': document.source_type,
+            'source_label': document.source_label,
+            'created_by': document.created_by,
+            'updated_by': document.updated_by,
             'created_at': document.created_at,
             'updated_at': document.updated_at,
+            'published_at': document.published_at,
+            'archived_at': document.archived_at,
             'is_active': bool(document.is_active)
         }

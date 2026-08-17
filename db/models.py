@@ -142,10 +142,20 @@ class TechnicianSchedule(Base):
 class KnowledgeDocument(Base):
     __tablename__ = 'knowledge_documents'
     id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=True)                    # 文档标题（Phase F F1）
     content = Column(Text, nullable=False)
     category = Column(String, nullable=False)
     keywords = Column(JSON, nullable=True)  # 存储关键词列表
     embedding = Column(JSON, nullable=True)  # 存储嵌入向量
+    status = Column(String, nullable=False, default='draft')  # draft/published/archived/failed
+    document_version = Column(Integer, nullable=False, default=1)  # 单文档版本（发布递增）
+    knowledge_version = Column(Integer, nullable=True)        # 发布时所在语料版本
+    source_type = Column(String, nullable=True)               # 来源类型 e.g. legacy/system_default/manual
+    source_label = Column(String, nullable=True)              # 来源可读标签
+    created_by = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = Column(Integer, default=1)  # 软删除标记

@@ -35,6 +35,13 @@ class SessionManager:
             self.engine = create_engine(self.db_path, **db_config.get_engine_kwargs())
 
         Base.metadata.create_all(self.engine)
+        # Phase F F1：为既有 knowledge_documents 补齐新增列并回填（幂等，仅 SQLite 生效）
+        try:
+            from ..migrations import apply_knowledge_migrations
+            apply_knowledge_migrations(self.engine)
+        except Exception:
+            logger = __import__("logging").getLogger(__name__)
+            logger.exception("知识库字段迁移失败（已降级继续，新字段按默认值处理）")
         self.Session = scoped_session(sessionmaker(bind=self.engine))
 
     def _init_sqlite(self):
