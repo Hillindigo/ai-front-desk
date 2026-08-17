@@ -136,6 +136,16 @@ class ConversationOrchestrator:
                     "message_id": assistant_msg["id"] if assistant_msg else None,
                     "intent": intent.to_dict(),
                 })
+
+                # 6. 行为记录（旁路：失败不影响主流程，D6）
+                if self.behavior_recorder is not None:
+                    try:
+                        self.behavior_recorder.record(
+                            user_id, conversation_id, intent.intent.value,
+                            {"sub_action": intent.sub_action.value, "run_id": stream.run_id},
+                        )
+                    except Exception:
+                        logger.warning("行为记录旁路异常", exc_info=True)
             except Exception as exc:
                 # 唯一失败终止事件；不伪造 run_completed
                 logger.exception("编排轮次失败")

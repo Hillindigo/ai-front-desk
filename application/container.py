@@ -42,6 +42,11 @@ class Container:
         # 意图路由（规则优先；LLM 兜底由外部注入）
         self.intent_router = IntentRouter(llm_classifier=llm_classifier)
 
+        # 行为旁路记录器（D6：失败不阻断主流程）
+        from application.behavior import BehaviorRecorder
+
+        self.behavior_recorder = behavior_recorder or BehaviorRecorder()
+
         # 会话专属 Agent 工厂（默认使用 chat_handler 的实现，惰性避免循环导入）
         if agent_factory is None:
             from api.chat_handler import get_task_agent_for as _default_agent_factory
@@ -57,7 +62,7 @@ class Container:
             router=self.intent_router,
             workflows=self.workflows,
             agent_factory=agent_factory,
-            behavior_recorder=behavior_recorder,
+            behavior_recorder=self.behavior_recorder,
         )
 
     def close(self) -> None:

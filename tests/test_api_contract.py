@@ -195,11 +195,14 @@ def test_appointment_create_defect_baseline(client):
 
 
 def test_consultation_ask_defect_baseline(client):
-    """基线：api/consultation.py 调用 ConsultantAgent.process_consultation
-    （方法不存在），当前返回 400 + detail。Phase D 修复后此测试应改为 200。"""
+    """Phase D D6 已修复：/api/consultation/ask 走统一咨询路径（ConsultantAgent.consult）。
+
+    A-R3 原缺陷（调用不存在方法恒 400）已修复，现在返回 200 咨询结果。
+    """
     resp = client.post("/api/consultation/ask", json={
         "user_id": "u1",
         "question": "营业时间是什么？",
     })
-    assert resp.status_code == 400
-    assert "detail" in resp.json()
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["data"]["answer"] is not None
