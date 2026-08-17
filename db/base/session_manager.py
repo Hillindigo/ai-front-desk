@@ -38,13 +38,19 @@ class SessionManager:
         self.Session = scoped_session(sessionmaker(bind=self.engine))
 
     def _init_sqlite(self):
-        """SQLite 初始化：确保父目录存在、开启 WAL、每连接启用外键。"""
+        """SQLite 初始化：确保父目录存在、开启 WAL、每连接启用外键 + BEGIN IMMEDIATE。"""
         database = make_url(self.db_path).database
         if database and database != ":memory:":
             parent = os.path.dirname(os.path.abspath(database))
             os.makedirs(parent, exist_ok=True)
+        # Phase C D6：使用自定义方言 sqlite+immediate（默认 BEGIN IMMEDIATE 写锁抢占，
+        # 防并发确认 lost update）。dialect 在 checkout 时管理 isolation_level，
+        # 不会被 connect_args/事件覆盖。
+        from . import immediate_dialect  # noqa: F401  注册 sqlite+immediate 方言
+
+        engine_url = self.db_path.replace("sqlite:///", "sqlite+immediate:///", 1)
         self.engine = create_engine(
-            self.db_path,
+            engine_url,
             connect_args={"check_same_thread": False, "timeout": 5},
         )
         # 外键约束按连接生效：listener 必须注册在首个连接建立之前（Phase C C1）
@@ -57,9 +63,9 @@ class SessionManager:
             cursor.close()
 
         # WAL 与 busy timeout：SQLite 并发写友好（Phase C D6）
+        # 用 dbapi 层执行，避免被 IMMEDIATE 事务（do_begin）包裹
         with self.engine.connect() as conn:
-            conn.execute(text("PRAGMA journal_mode=WAL"))
-            conn.commit()
+            conn.connection.driver_connection.execute("PRAGMA journal_mode=WAL")
 
     @contextmanager
     def session_scope(self):
