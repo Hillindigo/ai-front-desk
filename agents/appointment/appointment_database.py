@@ -9,7 +9,6 @@ from typing import Dict, Any
 import logging
 from datetime import datetime
 from config.time_config import time_config
-from config.constants import busy_periods_dict
 logger = logging.getLogger(__name__)
 
 
@@ -57,14 +56,6 @@ class AppointmentDatabase:
         except Exception as e:
             logger.error(f"保存预约信息到数据库失败：{e}")
             return False
-    
-    def update_memory_schedule(self, technician_id: str, start_time: datetime, end_time: datetime):
-        """更新内存中的服务人员忙碌时间段"""
-        busy_period = {
-            "start": time_config.format_datetime(start_time, "%H:%M"),
-            "end": time_config.format_datetime(end_time, "%H:%M")
-        }
-        busy_periods_dict.setdefault(technician_id, []).append(busy_period)
     
     def _record_user_behavior(self, start_time: datetime, end_time: datetime,
                             technician_id: str, appointment_history: Dict[str, Any], 

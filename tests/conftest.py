@@ -64,6 +64,7 @@ def _clean_appointment_tables():
     with router.session_manager.engine.connect() as conn:
         conn.execute(text("DELETE FROM appointment_events"))
         conn.execute(text("DELETE FROM appointments"))
+        conn.execute(text("DELETE FROM technician_schedules"))  # C3：清理测试排班残留
         conn.commit()
     router.close()
     yield

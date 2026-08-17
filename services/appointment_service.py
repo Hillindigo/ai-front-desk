@@ -21,6 +21,37 @@ class AppointmentService:
     def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         self.db_router = DatabaseRouter(db_path)
         self.technician_repo = self.db_router.technicians
+        self.appointment_repo = self.db_router.appointments  # Phase C：预约冲突查询
+
+    # ---------------- Phase C C3：领域可用性 ----------------
+
+    def check_technician_availability(self, technician_id: int, start_time: datetime, end_time: datetime) -> Dict[str, Any]:
+        """领域可用性检查：排班约束 + 已确认预约冲突（半开区间）。
+
+        返回 {"available": bool, "reason": str | None}；
+        reason 取值：TECHNICIAN_NOT_FOUND / TECHNICIAN_UNAVAILABLE / APPOINTMENT_CONFLICT。
+        """
+        tech = self.technician_repo.get_technician_by_id(technician_id)
+        if tech is None:
+            return {"available": False, "reason": "TECHNICIAN_NOT_FOUND"}
+        if self.technician_repo.find_schedule_conflicts(technician_id, start_time, end_time):
+            return {"available": False, "reason": "TECHNICIAN_UNAVAILABLE"}
+        if self.appointment_repo.find_conflicts(technician_id, start_time, end_time):
+            return {"available": False, "reason": "APPOINTMENT_CONFLICT"}
+        return {"available": True, "reason": None}
+
+    def get_available_technicians(self, start_time: datetime, end_time: datetime,
+                                  gender: Optional[str] = None) -> List[Dict[str, Any]]:
+        """查询 [start_time, end_time) 内可用的服务人员列表（可选性别过滤）。"""
+        techs = self.technician_repo.get_all_technicians()
+        if gender:
+            techs = [t for t in techs if t.get("gender") == gender]
+        available = []
+        for tech in techs:
+            result = self.check_technician_availability(tech["id"], start_time, end_time)
+            if result["available"]:
+                available.append(tech)
+        return available
     
     def save_appointment(self, technician_id: str, start_time: datetime, 
                         end_time: datetime, appointment_history: Dict[str, Any], 

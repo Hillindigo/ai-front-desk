@@ -223,6 +223,20 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
             
             return conflict is None
 
+    def find_schedule_conflicts(self, technician_id: int, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """查询服务人员排班（status='busy'）在 [start_time, end_time) 内的冲突块（Phase C C3）。
+
+        排班约束语义：'busy' 表示不可用/休息/被占用时间块（半开区间）。
+        """
+        with self.session_manager.session_scope() as session:
+            conflicts = session.query(TechnicianSchedule).filter(
+                TechnicianSchedule.technician_id == technician_id,
+                TechnicianSchedule.status == "busy",
+                TechnicianSchedule.start_time < end_time,
+                TechnicianSchedule.end_time > start_time
+            ).all()
+            return [self._schedule_to_dict(s) for s in conflicts]
+
     def update_schedule_status(self, schedule_id: int, status: str, appointment_id: Optional[int] = None) -> bool:
         """
         更新排班状态
