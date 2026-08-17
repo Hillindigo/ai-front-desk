@@ -138,6 +138,25 @@ class AppointmentRepository:
             appts = query.all()
             return [_appointment_to_dict(a) for a in appts]
 
+    # ---------------- 事务控制（Phase C D6） ----------------
+
+    def run_in_immediate_transaction(self, fn):
+        """在 BEGIN IMMEDIATE 事务内执行 fn(session)（SQLite 写锁抢占）。
+
+        用于确认/改约等"冲突检查 + 写入必须同事务"的场景，防止并发 lost update：
+        事务一开始即持有写锁，后续事务的 BEGIN 阻塞到提交后重新读取最新快照。
+        异常自动回滚。fn 的返回值作为本方法返回值。
+        """
+        with self.session_manager.session_scope() as session:
+            dbapi_conn = session.connection().connection.driver_connection
+            original = dbapi_conn.isolation_level
+            # sqlite3 连接级 isolation_level="IMMEDIATE"：隐式 BEGIN 变为 BEGIN IMMEDIATE
+            dbapi_conn.isolation_level = "IMMEDIATE"
+            try:
+                return fn(session)
+            finally:
+                dbapi_conn.isolation_level = original
+
     # ---------------- 写入（原子：预约 + 事件同事务） ----------------
 
     def create_draft(
@@ -237,6 +256,8 @@ class AppointmentRepository:
                 appt.idempotency_key = idempotency_key
             if extra_fields:
                 self._apply_fields(appt, extra_fields)
+                if "cancel_reason" in extra_fields:
+                    appt.cancel_reason = extra_fields["cancel_reason"]
             session.flush()
             event = AppointmentEvent(
                 appointment_id=appt.id,
