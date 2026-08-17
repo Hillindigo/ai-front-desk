@@ -115,10 +115,41 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             ).all()
             return [self._document_to_dict(doc) for doc in documents]
 
-    def update_document(self, doc_id: int, content: Optional[str] = None, category: Optional[str] = None, 
-                       keywords: Optional[List[str]] = None, embedding: Optional[List[float]] = None) -> bool:
+    def list_documents(self, status: Optional[str] = None,
+                       category: Optional[str] = None,
+                       keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """按状态/分类/关键词过滤列出文档（Phase F F2：分页由服务层做）。
+
+        keyword 匹配标题或正文（包含匹配，大小写不敏感）。
         """
-        更新文档
+        with self.session_manager.session_scope() as session:
+            query = session.query(KnowledgeDocument).filter(
+                KnowledgeDocument.is_active == 1
+            )
+            if status:
+                query = query.filter(KnowledgeDocument.status == status)
+            if category:
+                query = query.filter(KnowledgeDocument.category == category)
+            documents = query.all()
+            rows = [self._document_to_dict(doc) for doc in documents]
+        if keyword:
+            kw = keyword.strip().lower()
+            rows = [
+                r for r in rows
+                if kw in str(r.get("title") or "").lower()
+                or kw in str(r.get("content") or "").lower()
+            ]
+        return rows
+
+    def update_document(self, doc_id: int, content: Optional[str] = None, category: Optional[str] = None, 
+                       keywords: Optional[List[str]] = None, embedding: Optional[List[float]] = None,
+                       title: Optional[str] = None, status: Optional[str] = None,
+                       source_type: Optional[str] = None, source_label: Optional[str] = None,
+                       updated_by: Optional[str] = None, document_version: Optional[int] = None,
+                       knowledge_version: Optional[int] = None,
+                       published_at: Optional[Any] = None, archived_at: Optional[Any] = None) -> bool:
+        """
+        更新文档（Phase F：支持标题/状态/来源/版本/发布时间等治理字段）
         
         Args:
             doc_id: 文档ID
@@ -126,6 +157,15 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             category: 新分类
             keywords: 新关键词
             embedding: 新嵌入向量
+            title: 新标题
+            status: 新状态
+            source_type: 来源类型
+            source_label: 来源可读标签
+            updated_by: 更新人
+            document_version: 文档版本
+            knowledge_version: 知识版本
+            published_at: 发布时间
+            archived_at: 归档时间
             
         Returns:
             更新是否成功
@@ -137,7 +177,6 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             
             if not document:
                 return False
-            
             if content is not None:
                 document.content = content
             if category is not None:
@@ -146,6 +185,24 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                 document.keywords = keywords
             if embedding is not None:
                 document.embedding = embedding
+            if title is not None:
+                document.title = title
+            if status is not None:
+                document.status = status
+            if source_type is not None:
+                document.source_type = source_type
+            if source_label is not None:
+                document.source_label = source_label
+            if updated_by is not None:
+                document.updated_by = updated_by
+            if document_version is not None:
+                document.document_version = document_version
+            if knowledge_version is not None:
+                document.knowledge_version = knowledge_version
+            if published_at is not None:
+                document.published_at = published_at
+            if archived_at is not None:
+                document.archived_at = archived_at
             
             document.updated_at = datetime.utcnow()
             return True

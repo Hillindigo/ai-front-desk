@@ -7,7 +7,6 @@ FastAPI应用程序
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from services.knowledge_service import KnowledgeService
 from services.technician_service import TechnicianService
 from services.recommendation_service import RecommendationService
 from services.appointment_cleanup import appointment_draft_cleanup_loop
@@ -43,10 +42,11 @@ async def initialize_system(app: Optional[FastAPI] = None):
     try:
         logger.info("🚀 正在初始化 AI Front Desk 运营系统...")
 
-        # 初始化知识库服务
+        # 初始化知识库服务（F2：由容器单一实例持有并初始化，管理与咨询共享）
         logger.info("📚 初始化知识库服务...")
-        knowledge_service = KnowledgeService()
-        await knowledge_service.initialize()
+        from api.chat_handler import get_container
+        container = get_container()
+        await container.initialize()
 
         # 初始化服务人员服务
         logger.info("👥 初始化服务人员服务...")
@@ -123,6 +123,12 @@ def create_app() -> FastAPI:
             stop_event.set()
         if task is not None:
             await task
+        # Phase F F2：关闭共享容器（释放数据库与索引资源）
+        try:
+            from api.chat_handler import get_container
+            get_container().close()
+        except Exception:
+            pass
 
     return app
 

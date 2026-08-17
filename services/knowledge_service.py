@@ -282,8 +282,11 @@ class KnowledgeService:
             for i, r in enumerate(rows)
         ]
 
-    async def add_document(self, content: str, category: str, keywords: List[str] = None) -> bool:
-        """添加新文档"""
+    async def add_document(self, content: str, category: str, keywords: List[str] = None,
+                           title: str = None, status: str = "draft",
+                           source_type: str = None, source_label: str = None,
+                           created_by: str = None) -> bool:
+        """添加新文档（Phase F F2：支持治理字段；默认草稿，不自动上线）"""
         try:
             if keywords is None:
                 keywords = []
@@ -293,7 +296,11 @@ class KnowledgeService:
             embedding = embed_input(text_for_embedding)
             
             # 保存到数据库
-            doc_id = self.db.add_document(content, category, keywords, embedding)
+            doc_id = self.db.add_document(
+                content, category, keywords, embedding,
+                title=title, status=status, source_type=source_type,
+                source_label=source_label, created_by=created_by,
+            )
             
             # 重建索引
             await self._build_vector_index()
@@ -305,7 +312,10 @@ class KnowledgeService:
             logger.error(f"添加文档失败: {e}")
             return False
 
-    async def update_document(self, doc_id: int, content: str = None, category: str = None, keywords: List[str] = None) -> bool:
+    async def update_document(self, doc_id: int, content: str = None, category: str = None,
+                              keywords: List[str] = None, title: str = None,
+                              status: str = None, source_type: str = None,
+                              source_label: str = None, updated_by: str = None) -> bool:
         """更新文档"""
         try:
             # 如果更新了内容或关键词，需要重新生成嵌入向量
@@ -325,7 +335,11 @@ class KnowledgeService:
                 embedding = embed_input(text_for_embedding)
             
             # 更新数据库
-            success = self.db.update_document(doc_id, content, category, keywords, embedding)
+            success = self.db.update_document(
+                doc_id, content, category, keywords, embedding,
+                title=title, status=status, source_type=source_type,
+                source_label=source_label, updated_by=updated_by,
+            )
             
             if success and embedding is not None:
                 # 重建索引
