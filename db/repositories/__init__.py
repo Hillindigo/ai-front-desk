@@ -10,9 +10,11 @@ Repositories Module
 from .technician_repository import TechnicianRepository
 from .knowledge_repository import KnowledgeRepository
 from .user_behavior_repository import UserBehaviorRepository
+from .conversation_repository import ConversationRepository
 
 __all__ = [
     'TechnicianRepository',
     'KnowledgeRepository',
-    'UserBehaviorRepository'
+    'UserBehaviorRepository',
+    'ConversationRepository',
 ]

@@ -1,31 +1,32 @@
 from .base import SessionManager
-from .repositories import TechnicianRepository, KnowledgeRepository, UserBehaviorRepository
+from .repositories import TechnicianRepository, KnowledgeRepository, UserBehaviorRepository, ConversationRepository
 from typing import Optional
 
 
 class DatabaseRouter:
     """
     数据库路由器
-    
+
     职责：
     1. 管理数据库连接和会话
     2. 提供统一的数据访问入口
     3. 协调各个Repository的操作
     """
-    
+
     def __init__(self, db_path: str | None = None):  # Phase B 决策一：None 时取 db_config
         """
         初始化数据库路由器
-        
+
         Args:
             db_path: 数据库连接路径
         """
         self.session_manager = SessionManager(db_path)
-        
+
         # 初始化各个Repository
         self.technician_repo = TechnicianRepository(self.session_manager)
         self.knowledge_repo = KnowledgeRepository(self.session_manager)
         self.user_behavior_repo = UserBehaviorRepository(self.session_manager)
+        self.conversation_repo = ConversationRepository(self.session_manager)
 
     @property
     def technicians(self) -> TechnicianRepository:
@@ -41,6 +42,11 @@ class DatabaseRouter:
     def user_behavior(self) -> UserBehaviorRepository:
         """获取用户行为数据仓库"""
         return self.user_behavior_repo
+
+    @property
+    def conversations(self) -> ConversationRepository:
+        """获取会话与消息数据仓库（Phase B）"""
+        return self.conversation_repo
 
     def close(self):
         """关闭数据库连接"""

@@ -1,0 +1,164 @@
+"""会话与消息 Repository（Phase B B1）
+
+职责：
+- Conversation 创建、归属校验查询、最近活动更新。
+- Message 按会话追加（会话内序列号）、最近 N 条恢复、顺序读取。
+- 所有方法返回稳定 dict 结构，不暴露 ORM 对象生命周期。
+
+关键约束（计划 3.1/3.2）：
+- 消息必须绑定 conversation_id，禁止写入无归属消息。
+- 查询会话必须同时校验 user_id 归属。
+- 消息写入与 conversation 的 updated_at / last_activity_at 在同一事务内完成。
+"""
+
+import json
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from ..base.session_manager import SessionManager
+from ..models import Conversation, Message
+
+
+def _conversation_to_dict(conv: Conversation) -> Dict[str, Any]:
+    return {
+        "id": conv.id,
+        "user_id": conv.user_id,
+        "channel": conv.channel,
+        "status": conv.status,
+        "active_workflow": conv.active_workflow,
+        "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+        "last_activity_at": conv.last_activity_at.isoformat() if conv.last_activity_at else None,
+    }
+
+
+def _message_to_dict(msg: Message) -> Dict[str, Any]:
+    metadata = None
+    if msg.metadata_json:
+        try:
+            metadata = json.loads(msg.metadata_json)
+        except (ValueError, TypeError):
+            metadata = None
+    return {
+        "id": msg.id,
+        "conversation_id": msg.conversation_id,
+        "role": msg.role,
+        "content": msg.content,
+        "message_type": msg.message_type,
+        "metadata": metadata,
+        "sequence": msg.sequence,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
+class ConversationRepository:
+    """会话与消息持久化仓库。"""
+
+    def __init__(self, session_manager: SessionManager):
+        self.session_manager = session_manager
+
+    # ---------------- Conversation ----------------
+
+    def create_conversation(self, user_id: str = "default_user", channel: str = "web") -> Dict[str, Any]:
+        """创建会话，返回新会话 dict。"""
+        conv = Conversation(id=str(uuid.uuid4()), user_id=user_id, channel=channel, status="active")
+        with self.session_manager.session_scope() as session:
+            session.add(conv)
+            session.flush()
+            session.refresh(conv)
+            return _conversation_to_dict(conv)
+
+    def get_conversation(self, conversation_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """按 ID 获取会话；user_id 非空时同时校验归属。返回 dict 或 None。"""
+        with self.session_manager.session_scope() as session:
+            query = session.query(Conversation).filter(Conversation.id == conversation_id)
+            if user_id is not None:
+                query = query.filter(Conversation.user_id == user_id)
+            conv = query.first()
+            if conv is None:
+                return None
+            session.refresh(conv)
+            return _conversation_to_dict(conv)
+
+    def touch_conversation(self, conversation_id: str) -> bool:
+        """更新会话活动时间（updated_at/last_activity_at）。"""
+        now = datetime.utcnow()
+        with self.session_manager.session_scope() as session:
+            conv = session.query(Conversation).filter(Conversation.id == conversation_id).first()
+            if conv is None:
+                return False
+            conv.updated_at = now
+            conv.last_activity_at = now
+            return True
+
+    # ---------------- Message ----------------
+
+    def add_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        message_type: str = "text",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """向会话追加一条消息（同一事务更新会话活动时间）。
+
+        会话不存在时返回 None（禁止写入无归属消息）。
+        """
+        now = datetime.utcnow()
+        with self.session_manager.session_scope() as session:
+            conv = session.query(Conversation).filter(Conversation.id == conversation_id).first()
+            if conv is None:
+                return None
+
+            max_seq = (
+                session.query(Message.sequence)
+                .filter(Message.conversation_id == conversation_id)
+                .order_by(Message.sequence.desc())
+                .first()
+            )
+            next_seq = (max_seq[0] + 1) if max_seq else 1
+
+            msg = Message(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                message_type=message_type,
+                metadata_json=json.dumps(metadata, ensure_ascii=False) if metadata is not None else None,
+                sequence=next_seq,
+                created_at=now,
+            )
+            session.add(msg)
+            conv.updated_at = now
+            conv.last_activity_at = now
+            session.flush()
+            session.refresh(msg)
+            return _message_to_dict(msg)
+
+    def get_recent_messages(self, conversation_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """按会话返回最近 N 条消息，按 sequence 升序（恢复历史用）。"""
+        with self.session_manager.session_scope() as session:
+            rows = (
+                session.query(Message)
+                .filter(Message.conversation_id == conversation_id)
+                .order_by(Message.sequence.desc())
+                .limit(limit)
+                .all()
+            )
+            rows.reverse()
+            return [_message_to_dict(m) for m in rows]
+
+    def get_messages_after(self, conversation_id: str, after_sequence: int) -> List[Dict[str, Any]]:
+        """返回 sequence 大于 after_sequence 的消息（增量读取）。"""
+        with self.session_manager.session_scope() as session:
+            rows = (
+                session.query(Message)
+                .filter(
+                    Message.conversation_id == conversation_id,
+                    Message.sequence > after_sequence,
+                )
+                .order_by(Message.sequence.asc())
+                .all()
+            )
+            return [_message_to_dict(m) for m in rows]
