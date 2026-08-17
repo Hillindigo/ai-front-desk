@@ -145,14 +145,14 @@ FAKE_APPOINTMENT_PRESETS: List[Tuple[str, Dict[str, Any]]] = [
             "missing_info": ["start_time", "duration", "gender"],
         },
     ),
-    # 3. 预约项目 B（足疗，完整信息）—— 会话 B 的草稿隔离
+    # 3. 预约项目 B（足疗，缺少字段 -> 草稿保留）—— 会话 B 的草稿隔离
     (
         "足疗",
         {
-            "gender": "男", "start_time": "2026-08-18 15:00", "duration": "45分钟",
+            "gender": "未知", "start_time": "未知", "duration": "未知",
             "project": "足疗", "preference": "无", "technician_name": "未知",
-            "confirmation": "未知", "info_complete": True, "unrelated": False,
-            "missing_info": [],
+            "confirmation": "未知", "info_complete": False, "unrelated": False,
+            "missing_info": ["start_time", "duration", "gender"],
         },
     ),
     # 4. 确认（恢复后继续预约）

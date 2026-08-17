@@ -66,11 +66,13 @@ async def ProcessUserInput_stream(
     else:
         session = manager.get_or_create_default(user_id or "default_user")
 
-    # 1. 用户消息先落库（模型失败也不丢失用户输入）
-    manager.repository.add_message(session.conversation_id, "user", user_input)
-
-    # 2. 会话锁内处理（同一会话并发 turn 串行）
+    # 1. 会话锁内处理（同一会话并发 turn 完全串行，保证 user->assistant 成对）
     async with session.lock:
+        # 1a. 用户消息先落库（模型失败也不丢失用户输入），并同步运行时列表
+        user_message = manager.repository.add_message(session.conversation_id, "user", user_input)
+        if user_message:
+            session.append_message(user_message)
+
         try:
             agent = get_task_agent_for(session)
             collected = []
@@ -78,17 +80,21 @@ async def ProcessUserInput_stream(
                 collected.append(token)
                 yield token
 
-            # 3. assistant 最终消息落库（完成后）
+            # 3. assistant 最终消息落库（完成后），并同步运行时列表
             full_response = "".join(collected)
-            manager.repository.add_message(
+            assistant_message = manager.repository.add_message(
                 session.conversation_id, "assistant", full_response
             )
+            if assistant_message:
+                session.append_message(assistant_message)
         except Exception:
             # 模型等外部依赖不可用时返回稳定错误（A-R1）
             yield "[ERROR]模型或服务暂不可用，请稍后再试。"
-            manager.repository.add_message(
+            error_message = manager.repository.add_message(
                 session.conversation_id,
                 "assistant",
                 "[ERROR]模型或服务暂不可用。",
                 message_type="error",
             )
+            if error_message:
+                session.append_message(error_message)
