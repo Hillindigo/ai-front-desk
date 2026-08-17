@@ -38,15 +38,25 @@ class SessionManager:
         self.Session = scoped_session(sessionmaker(bind=self.engine))
 
     def _init_sqlite(self):
-        """SQLite 初始化：确保父目录存在、开启 WAL（并发写友好）。"""
+        """SQLite 初始化：确保父目录存在、开启 WAL、每连接启用外键。"""
         database = make_url(self.db_path).database
         if database and database != ":memory:":
             parent = os.path.dirname(os.path.abspath(database))
             os.makedirs(parent, exist_ok=True)
         self.engine = create_engine(
             self.db_path,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 5},
         )
+        # 外键约束按连接生效：listener 必须注册在首个连接建立之前（Phase C C1）
+        from sqlalchemy import event
+
+        @event.listens_for(self.engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        # WAL 与 busy timeout：SQLite 并发写友好（Phase C D6）
         with self.engine.connect() as conn:
             conn.execute(text("PRAGMA journal_mode=WAL"))
             conn.commit()

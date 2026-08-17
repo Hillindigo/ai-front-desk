@@ -1,13 +1,82 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from sqlalchemy import text
 from datetime import datetime
 
 Base = declarative_base()
 
 # ============================================================
-# Phase B（B1）：会话与消息持久化
+# Phase C（C1）：预约与排班领域
 # ============================================================
+
+class Appointment(Base):
+    """预约实体（Phase C）。
+
+    预约是"占用服务人员时间"的唯一业务来源；状态迁移由确定性领域服务控制。
+    id 为 UUID 字符串；idempotency_key 按 (user_id, idempotency_key) 唯一。
+    同一 conversation_id 最多一个活跃草稿（部分唯一索引，SQLite）。
+    """
+    __tablename__ = 'appointments'
+    __table_args__ = (
+        # 幂等键唯一约束（可空列：NULL 不参与唯一性，draft 无需幂等键）
+        Index('ix_appointments_user_idempotency', 'user_id', 'idempotency_key', unique=True),
+        # 冲突查询索引：按服务人员 + 时间
+        Index('ix_appointments_technician_time', 'technician_id', 'start_time', 'end_time'),
+        # 每会话最多一个活跃草稿（draft/pending_confirmation）
+        Index(
+            'uq_conversation_active_draft',
+            'conversation_id',
+            unique=True,
+            sqlite_where=text(
+                "conversation_id IS NOT NULL AND status IN ('draft', 'pending_confirmation')"
+            ),
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)                      # UUID，服务端生成
+    user_id = Column(String(64), nullable=False, index=True)
+    conversation_id = Column(String(36), nullable=True, index=True)  # 可空：后台创建
+    service_type = Column(String(64), nullable=False)              # 对外服务项目字段
+    project = Column(String(64), nullable=True)                    # 迁移期兼容字段
+    technician_id = Column(Integer, ForeignKey('technicians.id'), nullable=True)
+    start_time = Column(DateTime, nullable=True)                   # 草稿阶段可为空
+    end_time = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    status = Column(String(24), nullable=False, default='draft', index=True)
+    idempotency_key = Column(String(64), nullable=True)
+    version = Column(Integer, nullable=False, default=1)           # 乐观版本号
+    expires_at = Column(DateTime, nullable=True)                   # 草稿/待确认 TTL
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancel_reason = Column(String(128), nullable=True)
+
+    technician = relationship("Technician")
+    events = relationship(
+        "AppointmentEvent", back_populates="appointment",
+        cascade="all, delete-orphan", order_by="AppointmentEvent.id",
+    )
+
+
+class AppointmentEvent(Base):
+    """预约事件追踪（Phase C）。
+
+    与 Appointment 主记录同一事务写入；仅做审计与追踪，不作为当前状态唯一来源。
+    """
+    __tablename__ = 'appointment_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    appointment_id = Column(String(36), ForeignKey('appointments.id'), nullable=False, index=True)
+    event_type = Column(String(24), nullable=False)  # created/confirmed/cancelled/expired/rescheduled/failed
+    from_status = Column(String(24), nullable=True)
+    to_status = Column(String(24), nullable=True)
+    request_id = Column(String(64), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    appointment = relationship("Appointment", back_populates="events")
+
 
 class Conversation(Base):
     """用户会话（Phase B）。
