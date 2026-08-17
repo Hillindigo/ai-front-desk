@@ -92,13 +92,15 @@ async def ProcessUserInput_stream(
         )
         conversation_id = default_session.conversation_id
     try:
-        async for kind, payload in container.orchestrator.handle_turn(
+        async for envelope in container.orchestrator.handle_turn(
             conversation_id, user_id or "default_user", user_input
         ):
-            if kind == "text":
-                yield payload
-            elif kind == "failed":
-                # D3 兼容：失败事件转稳定错误文本（D4 由 run_failed 事件替代）
+            from application.contracts import EventType
+
+            if envelope.type == EventType.ASSISTANT_DELTA:
+                yield envelope.data.get("text", "")
+            elif envelope.type == EventType.RUN_FAILED:
+                # D4 兼容：run_failed 事件转稳定错误文本（旧 /chat/stream 消费者）
                 yield "[ERROR]模型或服务暂不可用，请稍后再试。"
     except Exception as exc:
         logger.error("聊天处理失败", exc_info=True)

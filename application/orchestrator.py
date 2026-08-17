@@ -8,9 +8,11 @@
 """
 
 import logging
+import uuid
 from typing import Any, AsyncGenerator, Callable, Dict, Optional
 
-from application.contracts import IntentClassification, IntentType
+from application.contracts import EventEnvelope, EventType, IntentClassification, IntentType
+from application.events import EventStream, clean_token
 from application.intent_rules import match_intent
 from application.workflows import AppointmentWorkflow, ConsultationWorkflow, UnrelatedWorkflow
 
@@ -70,9 +72,17 @@ class ConversationOrchestrator:
         user_id: str,
         user_input: str,
         request_id: Optional[str] = None,
-    ) -> AsyncGenerator[tuple, None]:
-        """执行一轮会话：yield ("text", chunk) / ("completed", info) / ("failed", error)。"""
+    ) -> AsyncGenerator[EventEnvelope, None]:
+        """执行一轮会话，输出事件流（D4）。
+
+        事件流只描述当前轮次（决策二）：run_started 首发，唯一
+        run_completed/run_failed 终止；跨轮预约状态由持久化草稿承载。
+        """
         session = self.session_manager.get_or_create_session(conversation_id, user_id)
+        stream = EventStream(
+            run_id=request_id or str(uuid.uuid4()),
+            conversation_id=conversation_id,
+        )
 
         async with session.lock:
             # 1. 用户消息先落库（决策二：先落库再调模型）
@@ -80,25 +90,36 @@ class ConversationOrchestrator:
             if user_msg:
                 session.append_message(user_msg)
 
+            yield stream.next(EventType.RUN_STARTED, {"request_id": request_id} if request_id else None)
+
             try:
                 # 2. 分类（规则优先 + LLM 兜底）
                 intent = await self.router.classify(
                     user_input,
                     {"conversation_id": conversation_id},
                 )
+                yield stream.next(EventType.INTENT_DETECTED, intent.to_dict())
 
                 # 3. 选择工作流并执行
                 self._ensure_agent(session)
                 workflow = self.workflows.get(intent.intent)
+                if workflow is not None:
+                    yield stream.next(EventType.WORKFLOW_STARTED, {"workflow": intent.intent.value})
+
                 collected: list = []
                 if workflow is None:
-                    collected.append("[REPLY][归类机器人]暂不支持该类型任务。\n")
+                    fallback = "暂不支持该类型任务。请询问门店服务、预约、排班或客户服务相关问题。\n"
+                    collected.append(fallback)
+                    yield stream.next(EventType.ASSISTANT_DELTA, {"text": fallback})
                 else:
                     async for token in workflow.run(session, user_input, intent, user_id):
-                        collected.append(token)
-                        yield ("text", token)
+                        clean = clean_token(token)
+                        if clean is None:
+                            continue  # [THOUGHT]/[SIGNAL] 不外泄（隐藏推理不暴露）
+                        collected.append(clean)
+                        yield stream.next(EventType.ASSISTANT_DELTA, {"text": clean})
 
-                # 4. assistant 完整消息落库（增量不是事实来源）
+                # 4. assistant 完整消息落库（增量不是事实来源；内容为清洗后文本）
                 full_response = "".join(collected)
                 assistant_msg = self.session_manager.repository.add_message(
                     conversation_id, "assistant", full_response
@@ -109,13 +130,20 @@ class ConversationOrchestrator:
                 # 5. 预约草稿同步（Phase C C5 行为保持）
                 self._sync_appointment_draft(session)
 
-                yield ("completed", {
+                stream.mark_terminal()
+                yield stream.next(EventType.RUN_COMPLETED, {
                     "conversation_id": conversation_id,
+                    "message_id": assistant_msg["id"] if assistant_msg else None,
                     "intent": intent.to_dict(),
                 })
             except Exception as exc:
+                # 唯一失败终止事件；不伪造 run_completed
                 logger.exception("编排轮次失败")
-                yield ("failed", {"error": str(exc)})
+                stream.mark_terminal()
+                yield stream.next(EventType.RUN_FAILED, {
+                    "error": "INTERNAL_ERROR",
+                    "message": "处理失败，请稍后再试。",
+                })
 
     def _sync_appointment_draft(self, session) -> None:
         """预约对话进行中 -> 同步持久化草稿（Phase C C5）。"""

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from api.chat_handler import ProcessUserInput_stream, get_session_manager
+from api.chat_handler import get_container, get_session_manager
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["会话"])
 
@@ -26,6 +26,7 @@ class CreateConversationRequest(BaseModel):
 class TurnRequest(BaseModel):
     message: str
     user_id: str = "default_user"
+    client_request_id: Optional[str] = None  # D4：请求去重标识（不替代预约幂等键）
 
 
 def _resolve_session(conversation_id: str, user_id: str):
@@ -67,18 +68,24 @@ def get_conversation(conversation_id: str, user_id: str = "default_user"):
 
 @router.post("/{conversation_id}/turns")
 async def send_turn(conversation_id: str, request: TurnRequest):
-    """发送一轮消息，流式返回 assistant 回复。"""
+    """发送一轮消息（Phase D D4：SSE 事件流，事件只描述当前轮次）。
+
+    失败以 run_failed 终止事件结束，不中途切换为未定义 JSON。
+    """
     if not request.message or not request.message.strip():
         raise HTTPException(status_code=422, detail="消息不能为空")
 
     _resolve_session(conversation_id, request.user_id)
 
-    async def token_generator():
-        async for token in ProcessUserInput_stream(
-            request.message,
-            conversation_id=conversation_id,
-            user_id=request.user_id,
-        ):
-            yield token
+    from application.events import sse_frame
 
-    return StreamingResponse(token_generator(), media_type="text/plain")
+    container = get_container()
+
+    async def event_generator():
+        async for envelope in container.orchestrator.handle_turn(
+            conversation_id, request.user_id, request.message,
+            request_id=request.client_request_id,
+        ):
+            yield sse_frame(envelope)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

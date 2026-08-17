@@ -3,9 +3,8 @@
 import pytest
 
 from api.chat_handler import get_session_manager, get_task_agent_for, reset_session_manager
-from application.contracts import IntentClassification, IntentType
+from application.contracts import EventType, IntentClassification, IntentType
 from application.orchestrator import ConversationOrchestrator, IntentRouter
-from application.intent_rules import match_intent
 from services.appointment_domain import AppointmentCommandService
 from services.technician_service import TechnicianService
 
@@ -27,14 +26,21 @@ def make_orchestrator(llm_classifier=None):
 
 
 async def run_turn(orchestrator, conversation_id, user_id, text):
+    """执行一轮，返回 (可见文本, 事件列表)。"""
     texts = []
-    final = {}
-    async for kind, payload in orchestrator.handle_turn(conversation_id, user_id, text):
-        if kind == "text":
-            texts.append(payload)
-        else:
-            final[kind] = payload
-    return "".join(texts), final
+    events = []
+    async for envelope in orchestrator.handle_turn(conversation_id, user_id, text):
+        events.append(envelope)
+        if envelope.type == EventType.ASSISTANT_DELTA:
+            texts.append(envelope.data.get("text", ""))
+    return "".join(texts), events
+
+
+def completed_data(events):
+    for env in events:
+        if env.type == EventType.RUN_COMPLETED:
+            return env.data
+    return None
 
 
 class TestIntentRouter:
@@ -70,24 +76,24 @@ class TestOrchestratorRouting:
         orch = make_orchestrator()
         mgr = get_session_manager()
         s = mgr.create_conversation(user_id="u1")
-        reply, final = await run_turn(orch, s.conversation_id, "u1", "我想预约肩颈放松")
-        assert final["completed"]["intent"]["intent"] == "appointment"
+        reply, events = await run_turn(orch, s.conversation_id, "u1", "我想预约肩颈放松")
+        assert completed_data(events)["intent"]["intent"] == "appointment"
         assert "肩颈放松" in reply or len(reply) > 0
 
     @pytest.mark.asyncio
     async def test_consultation_routes_to_workflow(self):
         orch = make_orchestrator()
         s = get_session_manager().create_conversation(user_id="u1")
-        reply, final = await run_turn(orch, s.conversation_id, "u1", "肩颈放松有什么好处")
-        assert final["completed"]["intent"]["intent"] == "consultation"
+        reply, events = await run_turn(orch, s.conversation_id, "u1", "肩颈放松有什么好处")
+        assert completed_data(events)["intent"]["intent"] == "consultation"
         assert len(reply) > 0
 
     @pytest.mark.asyncio
     async def test_unrelated_deterministic(self):
         orch = make_orchestrator()
         s = get_session_manager().create_conversation(user_id="u1")
-        reply, final = await run_turn(orch, s.conversation_id, "u1", "你好")
-        assert final["completed"]["intent"]["intent"] == "unrelated"
+        reply, events = await run_turn(orch, s.conversation_id, "u1", "你好")
+        assert completed_data(events)["intent"]["intent"] == "unrelated"
         assert "暂不支持" in reply
 
     @pytest.mark.asyncio
@@ -123,7 +129,7 @@ class TestDeterministicCommands:
         finally:
             svc.close()
 
-        reply, final = await run_turn(orch, s.conversation_id, "u1", "取消预约")
+        reply, events = await run_turn(orch, s.conversation_id, "u1", "取消预约")
         assert "已为您取消" in reply
         assert called == [], "明确取消命令不应调用 LLM"
         # 草稿已被取消
@@ -154,7 +160,7 @@ class TestDeterministicCommands:
         finally:
             svc.close()
 
-        reply, final = await run_turn(orch, s.conversation_id, "u1", "确认")
+        reply, events = await run_turn(orch, s.conversation_id, "u1", "确认")
         assert "确认成功" in reply
         svc = AppointmentCommandService()
         try:
