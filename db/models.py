@@ -161,6 +161,31 @@ class UserBehavior(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     technician = relationship("Technician")
 
+class ConversationSummary(Base):
+    """会话摘要快照表（Phase E E3）。
+
+    - 覆盖范围由消息 sequence 确定（禁止用时间戳猜测范围）。
+    - 同一会话保存多版本（新摘要写入前不覆盖旧摘要；active 为唯一有效快照）。
+    - invalidated：偏好删除等导致的失效（审计保留，永不进入 ContextPackage）。
+    - failed：生成/校验失败（保留原始消息，fallback 路径继续用旧摘要）。
+    """
+
+    __tablename__ = "conversation_summaries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False, index=True)
+    from_sequence = Column(Integer, nullable=False)
+    to_sequence = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    key_facts = Column(JSON, nullable=True)  # 结构化关键事实列表
+    status = Column(String(16), nullable=False, default="active")  # active/invalidated/failed
+    version = Column(Integer, nullable=False, default=1)
+    model_provider = Column(String(32), nullable=False, default="fake")
+    failure_log_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class UserPreference(Base):
     __tablename__ = 'user_preferences'
     id = Column(Integer, primary_key=True)
