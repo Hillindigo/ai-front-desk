@@ -233,7 +233,18 @@
             margin: 5px 0;
             border-left: 4px solid #3498db;
         }
-        
+
+        /* Phase E E7：记忆操作反馈（已记住/已删除/无法保存）高亮 */
+        .memory-feedback {
+            color: #6c3483;
+            font-weight: 700;
+            background: linear-gradient(135deg, #e8daef 0%, #f4ecf7 100%);
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #6c3483;
+        }
+
         .input-area {
             padding: 20px 30px;
             background: rgba(255,255,255,0.95);
@@ -563,6 +574,15 @@
         }
     }
 
+    // Phase E E7：记忆操作反馈可视化标记（"已记住"/"已删除"/"无法保存"）
+    function markLastBotMessage(markerClass) {
+        if (!lastBotBubble) return;
+        const reply = lastBotBubble.querySelector('div:last-child') || lastBotBubble;
+        if (reply && !reply.classList.contains(markerClass)) {
+            reply.classList.add(markerClass);
+        }
+    }
+
     chatForm.onsubmit = async function(e) {
         e.preventDefault();
         const text = userInput.value.trim();
@@ -640,6 +660,10 @@
                 if (eventName === 'assistant_delta' && data.text) {
                     botMsg += data.text;
                     updateLastBotMessage(botMsg);
+                    // Phase E E7：记忆操作反馈可视化（"已记住"/"无法保存"等）
+                    if (/我已记住|这条偏好|已删除|无法保存/.test(data.text)) {
+                        markLastBotMessage('memory-feedback');
+                    }
                 } else if (eventName === 'run_failed') {
                     // 稳定错误展示（事件流内失败）
                     botMsg += '\n[错误] ' + (data.message || '处理失败，请稍后再试');
