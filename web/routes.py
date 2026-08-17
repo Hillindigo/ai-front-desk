@@ -21,6 +21,8 @@ router = APIRouter(tags=["Web界面"])
 class ChatRequest(BaseModel):
     message: str
     state: str | None = None
+    conversation_id: str | None = None  # Phase B：显式会话 ID（可选）
+    user_id: str = "default_user"
 
 @router.get("/", response_class=HTMLResponse, summary="主页")
 async def read_root(request: Request):
@@ -29,17 +31,25 @@ async def read_root(request: Request):
 
 @router.post("/chat/stream", summary="流式聊天")
 async def chat_stream_endpoint(chat: ChatRequest):
-    """处理流式聊天请求"""
+    """处理流式聊天请求（Phase B 兼容包装：转发到显式会话或默认演示会话）"""
     async def token_generator():
-        async for token in ProcessUserInput_stream(chat.message):
+        async for token in ProcessUserInput_stream(
+            chat.message,
+            conversation_id=chat.conversation_id,
+            user_id=chat.user_id,
+        ):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 
 @router.post("/chat", summary="兼容性聊天接口")
 async def chat_endpoint(chat: ChatRequest):
-    """兼容性聊天接口，建议使用/chat/stream"""
+    """兼容性聊天接口，建议使用/chat/stream（Phase B 兼容包装）"""
     async def token_generator():
-        async for token in ProcessUserInput_stream(chat.message):
+        async for token in ProcessUserInput_stream(
+            chat.message,
+            conversation_id=chat.conversation_id,
+            user_id=chat.user_id,
+        ):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 
