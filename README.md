@@ -123,6 +123,24 @@ API 文档：
 - 会话与消息持久化到 SQLite，服务重启后可按 `conversation_id` 恢复。
 - URL 中的 `conversation_id` 是会话主标识；服务端校验会话存在与归属（`user_id`）。
 
+### 预约 API（Phase C）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/appointments` | 创建草稿（`mode=draft`）或创建并确认（`mode=confirm`） |
+| GET | `/api/v1/appointments/{id}` | 查询预约详情（归属校验） |
+| POST | `/api/v1/appointments/{id}/confirm` | 确认待确认预约（支持 `idempotency_key`） |
+| POST | `/api/v1/appointments/{id}/cancel` | 取消预约 |
+| POST | `/api/v1/appointments/{id}/reschedule` | 原子改约（新时间冲突时原预约不变） |
+| GET | `/api/v1/appointments/availability` | 查询服务人员可用性（`technician_id`/`start_time`/`end_time`） |
+
+预约状态机：`draft → pending_confirmation → confirmed`，任意非终态可 `cancelled`，过期草稿 `expired`（TTL 默认 24h）。
+
+- 冲突规则：半开区间 `[start, end)`，相邻预约不冲突；创建/改约在事务内完成冲突校验（`BEGIN IMMEDIATE`）。
+- 幂等：`mode=confirm` 与 confirm 接口支持 `idempotency_key`，重复提交返回原预约。
+- 领域错误返回稳定 `code`（如 `APPOINTMENT_CONFLICT`、`IDEMPOTENCY_CONFLICT`）+ 可读 `message`。
+- 旧 `/api/appointment/create` 已降级为领域服务适配器（不再实例化 Agent 写排班表）。
+
 ## 目录结构
 
 ```text

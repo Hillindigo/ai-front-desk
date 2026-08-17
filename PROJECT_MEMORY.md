@@ -71,9 +71,9 @@ Repositories / Database
 
 当前必须记住的实现事实：
 
-1. `api/chat_handler.py`、`web/routes.py` 和部分 Agent 仍存在全局会话/Agent 状态假设。
-2. `config/constants.py` 中的 `busy_periods_dict` 是进程级共享状态，不能当作多用户会话状态。
-3. 预约仍与 `technician_schedules` 等旧结构耦合，预约检查和写入尚未形成可靠的独立领域模型与原子事务。
+1. 聊天链路已按会话运行（Phase B）：`api/chat_handler.py` 通过 `ConversationSession/SessionManager` 按 `conversation_id` 管理会话、消息持久化与并发锁；`/chat/stream` 是兼容包装，无 ID 时落到默认演示会话。
+2. `config/constants.py` 中的 `busy_periods_dict` 是进程级共享状态，已弃用（Phase C 后新主流程不再写入/读取），保留定义仅为兼容导出。
+3. 预约已领域化（Phase C）：独立 `Appointment`/`AppointmentEvent` 表、显式状态机（draft→pending_confirmation→confirmed / cancelled / expired）、`BEGIN IMMEDIATE` 事务内冲突校验与幂等键；`Agent` 通过领域服务完成预约，不再直接写 `technician_schedules` 或 `busy_periods_dict`。
 4. 数据库层同时存在 Repository、Router 和兼容层，后续需要按阶段删除重复入口，不能只叠加新层。
 5. 知识库索引仍由进程内服务管理，知识变更会触发重建；后续先解决可靠性和验证边界，不直接引入超出当前规模的复杂基础设施。
 6. 内部技术字段仍使用 `technician`，产品文案优先使用“服务人员”；除非阶段计划明确迁移，不要随意修改数据库字段命名。

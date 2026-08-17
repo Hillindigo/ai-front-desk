@@ -702,3 +702,80 @@ Phase C 完成后，应向 Phase D 输出：
 - 尚未完成的认证、权限、生产多进程、线上和外部渠道验收。
 
 Phase D 不应再次重写预约核心状态机，而应在 Phase C 已验证的领域服务之上统一 Agent 编排、工具输入输出、流式事件和全局错误语义。
+
+## 12. Phase C 执行结果（2026-08-17）
+
+### 测试结果
+
+- **121 passed, 10 skipped, 0 failed**（连跑 3 次稳定，含并发测试无 flaky）
+- 全程 `MODEL_PROVIDER=fake`，零真实 LLM/Embedding 调用
+- 测试使用临时 SQLite（conftest session 级 + 每测试清理预约/排班表），未污染共享库
+
+### 完成定义核对
+
+功能完成：
+
+- [x] 独立 `Appointment` 实体（UUID、user/conversation 归属、状态、幂等键、版本、TTL）
+- [x] 草稿/待确认/已确认/已取消/已过期状态持久化，可恢复（C5 集成测试）
+- [x] 状态迁移只通过确定性领域服务（`AppointmentCommandService` + 显式状态机表）
+- [x] 排班约束与预约占用分离：`TechnicianSchedule` 只表排班，占用以 `Appointment(confirmed)` 为准
+- [x] 半开区间 `[start, end)` 冲突规则（相邻不冲突、取消不参与、改约排除自身）
+- [x] 创建/确认、取消、改约均有事务边界（`BEGIN IMMEDIATE`，冲突检查+写入同事务）
+- [x] 改约冲突原预约不变；取消释放时段（C4 测试）
+- [x] 幂等键数据库唯一约束 `(user_id, idempotency_key)`，重复提交返回原预约（C4/C7）
+- [x] Agent 不再直接写 `TechnicianSchedule` 或 `busy_periods_dict`（C3 移除 + C5 适配器）
+- [x] 旧 `/api/appointment/create` 降级为领域服务适配器（C6）
+
+测试完成：
+
+- [x] Phase B 原有测试无回归（契约测试保持；旧接口缺陷测试已更新为修复后行为）
+- [x] Repository / 状态机 / 领域服务 / 冲突 / 取消 / 改约 / 幂等 / 回滚 / 并发测试通过
+- [x] 同人员并发确认：至多一个成功，失败方保持 pending（C7 线程级 BEGIN IMMEDIATE）
+- [x] 故障注入：事件写入失败整个事务回滚（C7）
+- [x] Fake 模式零真实模型调用；临时库隔离
+- [x] user_behavior 10 个 skip 保留
+
+运行和文档完成：
+
+- [x] 新表自动初始化（create_all），旧表结构未迁移（`appointment_id` 保留弃用）
+- [x] 新 API TestClient 契约测试 + 手工 HTTP 验收（见下）
+- [x] README、PROJECT_MEMORY.md、本文件已同步
+- [x] `git diff --check` 通过
+
+### 数据库变更与迁移记录
+
+| 变更 | 说明 | 回滚 |
+|---|---|---|
+| 新增 `appointments` 表 | UUID 主键、幂等唯一索引、活跃草稿部分唯一索引、技师+时间索引 | 删除表（演示库） |
+| 新增 `appointment_events` 表 | 审计事件（外键到 appointments） | 同上 |
+| `technician_schedules` | 5 条 legacy busy 归档为 `archived`（scripts/migrate_legacy_schedules.py） | 脚本可逆（UPDATE 回 busy） |
+| `TechnicianSchedule.appointment_id` | 保留但弃用（新代码不写入） | 字段保留 |
+| `busy_periods_dict` | 弃用（定义保留兼容导出） | — |
+
+### 遗留状态
+
+- A-R1（启动降级）✅ 已处理（Phase B）
+- A-R2（user_behavior）⏸️ 延期，skip 保留，Phase D 收口
+- A-R3（旧 API 缺陷）：**部分修复**——`/api/appointment/create` 已修复（C6 领域适配器）；`/api/task/classify`、`/api/consultation/ask` 仍待 Phase D
+- A-R4/A-R5 ✅ 已处理（Phase B）
+
+### 提交记录（Phase C，9 个 commit）
+
+```
+Phase C(test)-建立预约领域基线
+Phase C(feat)-新增预约与事件模型
+Phase C(feat)-预约Repository与事务
+Phase C(refactor)-分离排班与预约数据
+Phase C(feat)-实现预约状态机
+Phase C(refactor)-预约Agent调用领域服务
+Phase C(feat)-新增预约管理API
+Phase C(test)-验证冲突恢复与并发
+Phase C(docs)-记录PhaseC执行结果（本提交）
+```
+
+### 交接到 Phase D
+
+- `Appointment`/`AppointmentEvent` 最终字段与状态机已稳定，Phase D 不重写预约核心。
+- 新预约 API 的请求/响应/错误码/幂等语义已定义（`/api/v1/appointments`）。
+- Agent 通过领域服务完成预约；`conversation_id` 已贯穿会话与预约。
+- 仍只在 SQLite 单进程、Fake 模式下验证；多进程、鉴权、线上验收待后续阶段。
