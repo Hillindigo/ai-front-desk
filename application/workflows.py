@@ -69,6 +69,7 @@ class AppointmentWorkflow:
         user_input: str,
         intent: IntentClassification,
         user_id: str = "default_user",
+        context: Optional[Dict[str, Any]] = None,  # Phase E E5：结构化上下文（只读）
     ) -> AsyncGenerator[str, None]:
         sub = intent.sub_action
         if sub == AppointmentSubAction.CANCEL:
@@ -118,6 +119,7 @@ class ConsultationWorkflow:
         user_input: str,
         intent: IntentClassification,
         user_id: str = "default_user",
+        context: Optional[Dict[str, Any]] = None,  # Phase E E5：证据/偏好上下文（仅传递，注入后续工作流）
     ) -> AsyncGenerator[str, None]:
         consultant_agent = session.agent.consultant_agent
         async for token in consultant_agent.consult_stream(user_input):
@@ -133,5 +135,6 @@ class UnrelatedWorkflow:
         user_input: str,
         intent: IntentClassification,
         user_id: str = "default_user",
+        context: Optional[Dict[str, Any]] = None,  # Phase E E5：兼容签名（确定性回复不使用）
     ) -> AsyncGenerator[str, None]:
         yield "[REPLY][归类机器人]暂不支持该类型任务。请询问门店服务、预约、排班或客户服务相关问题。\n"

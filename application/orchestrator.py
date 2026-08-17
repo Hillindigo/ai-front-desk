@@ -8,6 +8,7 @@
 """
 
 import logging
+import re
 import uuid
 from typing import Any, AsyncGenerator, Callable, Dict, Optional
 
@@ -59,6 +60,9 @@ class ConversationOrchestrator:
         workflows: Optional[Dict[IntentType, Any]] = None,
         agent_factory: Optional[Callable[[Any], Any]] = None,
         behavior_recorder: Optional[Any] = None,
+        context_builder: Optional[Any] = None,   # Phase E E5：统一上下文装配
+        summary_service: Optional[Any] = None,   # Phase E E5：摘要旁路（失败不阻断）
+        preference_service: Optional[Any] = None,  # Phase E E5：偏好命令确定性路由
     ):
         self.session_manager = session_manager
         self.router = router or IntentRouter()
@@ -69,6 +73,9 @@ class ConversationOrchestrator:
         }
         self.agent_factory = agent_factory
         self.behavior_recorder = behavior_recorder  # 旁路记录器（D6 接入）
+        self.context_builder = context_builder
+        self.summary_service = summary_service
+        self.preference_service = preference_service
 
     def _ensure_agent(self, session) -> None:
         if session.agent is None and self.agent_factory is not None:
@@ -151,33 +158,79 @@ class ConversationOrchestrator:
             yield stream.next(EventType.RUN_STARTED, {"request_id": request_id} if request_id else None)
 
             try:
-                # 2. 分类（规则优先 + LLM 兜底）
+                # 1.5 统一上下文装配（Phase E E5：只读、无副作用；失败降级为空上下文）
+                context_input: Optional[Dict[str, Any]] = None
+                if self.context_builder is not None:
+                    try:
+                        package = await self.context_builder.build(
+                            conversation_id, user_id, user_input,
+                            workflow_state={"conversation_id": conversation_id},
+                        )
+                        context_input = package.model_input()
+                    except Exception:
+                        logger.exception("上下文装配失败，降级为无上下文")
+
+                # 2. 分类（规则优先 + LLM 兜底；结构化上下文只读传递）
                 intent = await self.router.classify(
                     user_input,
-                    {"conversation_id": conversation_id},
+                    context_input or {"conversation_id": conversation_id},
                 )
                 yield stream.next(EventType.INTENT_DETECTED, intent.to_dict())
 
-                # 3. 选择工作流并执行
-                self._ensure_agent(session)
-                workflow = self.workflows.get(intent.intent)
+                # 2.5 偏好命令确定性路由（决策二：不让 LLM 直接写偏好）
+                preference_target = self._detect_preference_command(user_input)
                 tool_name = self._tool_name(intent)
-                if workflow is not None:
-                    yield stream.next(EventType.WORKFLOW_STARTED, {"workflow": intent.intent.value})
-                    yield stream.next(EventType.TOOL_STARTED, {"tool": tool_name})
 
-                collected: list = []
-                if workflow is None:
-                    fallback = "暂不支持该类型任务。请询问门店服务、预约、排班或客户服务相关问题。\n"
-                    collected.append(fallback)
-                    yield stream.next(EventType.ASSISTANT_DELTA, {"text": fallback})
+                if preference_target is not None and self.preference_service is not None:
+                    ptype, pvalue = preference_target
+                    yield stream.next(EventType.WORKFLOW_STARTED, {"workflow": "preference"})
+                    yield stream.next(EventType.TOOL_STARTED, {"tool": "preference_memorize"})
+                    try:
+                        record = self.preference_service.set_preference(
+                            user_id=user_id,
+                            preference_type=ptype,
+                            preference_value=pvalue,
+                            source="explicit_memorize",
+                            source_message_id=str(user_msg["id"]) if user_msg else None,
+                        )
+                        memorized = record["preference_value"]
+                        reply = f"我已记住你偏好的{ptype}：{memorized}。后续会按这个偏好为你推荐。"
+                    except Exception:
+                        logger.exception("偏好保存失败（旁路，不阻断对话）")
+                        reply = "这条偏好暂时无法保存，你可以稍后再试。"
+                    collected = [reply]
+                    yield stream.next(EventType.ASSISTANT_DELTA, {"text": reply})
+                    yield stream.next(EventType.TOOL_RESULT, {"tool": "preference_memorize", "success": True})
+
+                # 3. 选择工作流并执行
+                elif intent.intent != IntentType.UNKNOWN:
+                    self._ensure_agent(session)
+                    workflow = self.workflows.get(intent.intent)
+                    if workflow is not None:
+                        yield stream.next(EventType.WORKFLOW_STARTED, {"workflow": intent.intent.value})
+                        yield stream.next(EventType.TOOL_STARTED, {"tool": tool_name})
+
+                    collected: list = []
+                    if workflow is None:
+                        fallback = "暂不支持该类型任务。请询问门店服务、预约、排班或客户服务相关问题。\n"
+                        collected.append(fallback)
+                        yield stream.next(EventType.ASSISTANT_DELTA, {"text": fallback})
+                    else:
+                        async for token in workflow.run(session, user_input, intent, user_id, context=context_input):
+                            clean = clean_token(token)
+                            if clean is None:
+                                continue  # [THOUGHT]/[SIGNAL] 不外泄（隐藏推理不暴露）
+                            collected.append(clean)
+                            yield stream.next(EventType.ASSISTANT_DELTA, {"text": clean})
+
+                    if workflow is not None:
+                        yield stream.next(EventType.TOOL_RESULT, {
+                            "tool": tool_name,
+                            "success": True,
+                        })
                 else:
-                    async for token in workflow.run(session, user_input, intent, user_id):
-                        clean = clean_token(token)
-                        if clean is None:
-                            continue  # [THOUGHT]/[SIGNAL] 不外泄（隐藏推理不暴露）
-                        collected.append(clean)
-                        yield stream.next(EventType.ASSISTANT_DELTA, {"text": clean})
+                    collected = ["暂不支持该类型任务。请询问门店服务、预约、排班或客户服务相关问题。\n"]
+                    yield stream.next(EventType.ASSISTANT_DELTA, {"text": collected[0]})
 
                 # 4. assistant 完整消息落库（增量不是事实来源；内容为清洗后文本）
                 full_response = "".join(collected)
@@ -193,14 +246,17 @@ class ConversationOrchestrator:
                 if assistant_msg:
                     session.append_message(assistant_msg)
 
+                # 4.5 摘要旁路（Phase E E5：会话锁内触发；失败不影响主流程）
+                if self.summary_service is not None:
+                    try:
+                        outcome = await self.summary_service.summarize_if_needed(conversation_id)
+                        if outcome not in ("skipped", "no_op"):
+                            logger.info("摘要旁路结果: %s conv=%s", outcome, conversation_id)
+                    except Exception:
+                        logger.exception("摘要旁路异常（不阻断主对话）")
+
                 # 5. 预约草稿同步（Phase C C5 行为保持）
                 self._sync_appointment_draft(session)
-
-                if workflow is not None:
-                    yield stream.next(EventType.TOOL_RESULT, {
-                        "tool": tool_name,
-                        "success": True,
-                    })
 
                 stream.mark_terminal()
                 yield stream.next(EventType.RUN_COMPLETED, {
@@ -258,3 +314,58 @@ class ConversationOrchestrator:
             )
         except Exception:
             logger.exception("同步预约草稿失败（旁路）")
+
+    # ---------------- Phase E E5：偏好命令确定性路由 ----------------
+
+    # 称谓型关键词（值在关键词前，如"王师傅"）：技师/师傅/服务人员
+    # 属性型关键词（值在关键词后，如"时间 下午2点"）：时间/时段/上午/下午/晚上/项目/服务/时长/分钟
+    _PREFERENCE_KEYWORDS = {
+        "technician": ("技师", "师傅", "服务人员"),
+        "time": ("时间", "时段", "上午", "下午", "晚上"),
+        "service": ("项目", "服务"),
+        "duration": ("时长", "分钟"),
+    }
+    _PREFERENCE_TRIGGERS = ("请记住", "记住", "以后都", "以后就", "帮我记住", "我喜欢")
+    # 引导词（最长优先剥离）："我喜欢王师傅" -> "王师傅"；"以后都选王师傅" -> "王师傅"
+    _GUIDE_PHRASES = (
+        "以后都要", "帮我记住", "请记住", "我想要", "我喜欢", "以后都", "以后就",
+        "要选", "想选", "想找", "要找", "喜欢", "以后", "想要", "要", "选", "用",
+    )
+
+    def _detect_preference_command(self, text: str) -> Optional[tuple]:
+        """检测明确的长期偏好表达（决策二门槛的确定性启发式）。
+
+        返回 (preference_type, preference_value)；未命中返回 None。
+        说明：原型启发式覆盖常见表述（称谓型"王师傅"、属性型"时间 下午2点"），
+        不依赖 LLM；复杂表达由后续真实 NLU 能力接管，本阶段不冒充精确。
+        """
+        for trigger in self._PREFERENCE_TRIGGERS:
+            trig_idx = text.find(trigger)
+            if trig_idx < 0:
+                continue
+            seg = text[trig_idx + len(trigger):]
+            for ptype, keywords in self._PREFERENCE_KEYWORDS.items():
+                for kw in keywords:
+                    kw_idx = seg.find(kw)
+                    if kw_idx < 0:
+                        continue
+                    head = seg[:kw_idx].strip(" ，。！？,.!?；;的")
+                    after = seg[kw_idx + len(kw):].strip(" ，。！？,.!?；;的")
+                    if ptype == "technician":
+                        # 称谓型：名字在关键词前（"我喜欢王师傅"）
+                        value = self._strip_guides(head) + kw if head else (after or kw)
+                    else:
+                        # 属性型：值在关键词后（"时间 下午2点"）；无则取整段
+                        value = after if after else seg.strip(" ，。！？,.!?；;的")
+                    value = value.strip()
+                    if value:
+                        return ptype, value[:40]
+        return None
+
+    @staticmethod
+    def _strip_guides(head: str) -> str:
+        """剥离前缀引导词（最长优先）。"我喜欢王" -> "王"。"""
+        for guide in ConversationOrchestrator._GUIDE_PHRASES:
+            if head.startswith(guide):
+                return head[len(guide):]
+        return head

@@ -66,12 +66,43 @@ class Container:
             IntentType.CONSULTATION: ConsultationWorkflow(),
             IntentType.UNRELATED: UnrelatedWorkflow(),
         }
+
+        # Phase E E5：统一上下文装配（只读读取器 -> ContextBuilder -> Orchestrator）
+        from application.context_builder import ContextBuilder
+        from application.context_readers import (
+            KnowledgeEvidenceReader,
+            RepositoryAppointmentReader,
+            RepositoryMessageReader,
+            RepositorySummaryReader,
+            ServicePreferenceReader,
+        )
+        from db.repositories.summary_repository import SummaryRepository
+        from services.summary_service import SummaryService
+        from services.knowledge_service import KnowledgeService
+
+        self.summary_repository = SummaryRepository(self.db_router.session_manager)
+        self.context_builder = ContextBuilder(
+            message_reader=RepositoryMessageReader(self.db_router.conversations),
+            appointment_reader=RepositoryAppointmentReader(self.db_router.appointments),
+            preference_reader=ServicePreferenceReader(self.preference_service),
+            summary_reader=RepositorySummaryReader(self.summary_repository),
+            evidence_reader=KnowledgeEvidenceReader(KnowledgeService()),
+        )
+        self.summary_service = SummaryService(
+            repository=self.summary_repository,
+            message_reader=RepositoryMessageReader(self.db_router.conversations),
+            appointment_reader=RepositoryAppointmentReader(self.db_router.appointments),
+        )
+
         self.orchestrator = ConversationOrchestrator(
             session_manager=self.session_manager,
             router=self.intent_router,
             workflows=self.workflows,
             agent_factory=agent_factory,
             behavior_recorder=self.behavior_recorder,
+            context_builder=self.context_builder,
+            summary_service=self.summary_service,
+            preference_service=self.preference_service,
         )
 
     def close(self) -> None:
