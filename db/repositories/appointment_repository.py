@@ -28,6 +28,10 @@ DRAFT_FIELD_WHITELIST = {
 ACTIVE_DRAFT_STATUSES = ("draft", "pending_confirmation")
 
 
+class ActiveDraftOwnershipError(Exception):
+    """同一会话的活跃草稿属于其他用户。"""
+
+
 def _appointment_to_dict(appt: Appointment) -> Dict[str, Any]:
     return {
         "id": appt.id,
@@ -192,6 +196,81 @@ class AppointmentRepository:
             session.flush()
             session.refresh(appt)
             return _appointment_to_dict(appt)
+
+    def upsert_active_draft(
+        self,
+        user_id: str,
+        conversation_id: str,
+        service_type: str,
+        fields: Optional[Dict[str, Any]] = None,
+        ttl_hours: int = 24,
+    ) -> Dict[str, Any]:
+        """原子创建或更新会话唯一活跃草稿。
+
+        同一会话重复提交预约意图时复用现有草稿，不让数据库唯一索引异常
+        泄漏为 500；若草稿属于其他用户，则拒绝跨用户修改。
+        """
+        now = datetime.utcnow()
+
+        def _upsert_in_tx(session):
+            appt = (
+                session.query(Appointment)
+                .filter(
+                    Appointment.conversation_id == conversation_id,
+                    Appointment.status.in_(ACTIVE_DRAFT_STATUSES),
+                )
+                .first()
+            )
+            if appt is not None:
+                if appt.user_id != user_id:
+                    raise ActiveDraftOwnershipError(conversation_id)
+                from_status = appt.status
+                # 用户在待确认阶段提交新字段时，重新打开草稿，要求再次校验。
+                if appt.status == "pending_confirmation":
+                    appt.status = "draft"
+                appt.service_type = service_type
+                self._apply_fields(appt, fields or {})
+                appt.expires_at = now + timedelta(hours=ttl_hours)
+                appt.version += 1
+                appt.updated_at = now
+                session.add(
+                    AppointmentEvent(
+                        appointment_id=appt.id,
+                        event_type="updated",
+                        from_status=from_status,
+                        to_status=appt.status,
+                        payload_json=_event_payload({"service_type": service_type}),
+                    )
+                )
+                session.flush()
+                session.refresh(appt)
+                return _appointment_to_dict(appt)
+
+            appt = Appointment(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                conversation_id=conversation_id,
+                service_type=service_type,
+                status="draft",
+                expires_at=now + timedelta(hours=ttl_hours),
+            )
+            self._apply_fields(appt, fields or {})
+            session.add(appt)
+            session.flush()
+            session.add(
+                AppointmentEvent(
+                    appointment_id=appt.id,
+                    event_type="created",
+                    from_status=None,
+                    to_status="draft",
+                    payload_json=_event_payload({"service_type": service_type}),
+                )
+            )
+            session.flush()
+            session.refresh(appt)
+            return _appointment_to_dict(appt)
+
+        return self.run_in_immediate_transaction(_upsert_in_tx)
 
     def update_draft(
         self,

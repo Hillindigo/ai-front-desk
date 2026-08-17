@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.knowledge_service import KnowledgeService
 from services.technician_service import TechnicianService
 from services.recommendation_service import RecommendationService
+from services.appointment_cleanup import appointment_draft_cleanup_loop
 from config.settings import settings
 from typing import List, Optional
 import logging
@@ -109,6 +110,19 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         await initialize_system(app)
+        app.state.appointment_cleanup_stop = asyncio.Event()
+        app.state.appointment_cleanup_task = asyncio.create_task(
+            appointment_draft_cleanup_loop(app.state.appointment_cleanup_stop)
+        )
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        stop_event = getattr(app.state, "appointment_cleanup_stop", None)
+        task = getattr(app.state, "appointment_cleanup_task", None)
+        if stop_event is not None:
+            stop_event.set()
+        if task is not None:
+            await task
 
     return app
 

@@ -138,6 +138,8 @@ API 文档：
 
 - 冲突规则：半开区间 `[start, end)`，相邻预约不冲突；创建/改约在事务内完成冲突校验（`BEGIN IMMEDIATE`）。
 - 幂等：`mode=confirm` 与 confirm 接口支持 `idempotency_key`，重复提交返回原预约。
+- `mode` 必须显式为 `draft` 或 `confirm`；同一 `conversation_id` 重复提交 `draft` 会原子复用当前活跃草稿。
+- 草稿默认 24 小时过期，应用启动后由后台清理循环按周期标记为 `expired`；可通过 `APPOINTMENT_DRAFT_CLEANUP_INTERVAL_SECONDS` 调整周期。
 - 领域错误返回稳定 `code`（如 `APPOINTMENT_CONFLICT`、`IDEMPOTENCY_CONFLICT`）+ 可读 `message`。
 - 旧 `/api/appointment/create` 已降级为领域服务适配器（不再实例化 Agent 写排班表）。
 
@@ -175,4 +177,3 @@ python -m compileall agents api config db services web app.py
 - 测试默认运行在 `MODEL_PROVIDER=fake` 模式（零真实 LLM/Embedding 调用，可离线）。
 - 测试使用独立临时 SQLite 数据库，不污染本地 `data/` 数据。
 - 无真实模型 key 时应用可降级启动，聊天返回稳定错误提示。
-

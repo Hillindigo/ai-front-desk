@@ -49,6 +49,9 @@ class AppointmentDatabase:
 
             svc = AppointmentCommandService()
             try:
+                existing = svc.repo.get_by_idempotency("default_user", session_id)
+                if existing is not None:
+                    return existing["status"] == "confirmed"
                 draft = svc.create_draft(
                     user_id="default_user",  # 兼容现状：单用户演示（Phase D 传入真实 user_id）
                     conversation_id=session_id,

@@ -12,7 +12,7 @@
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class AppointmentCreateRequest(BaseModel):
     user_id: str = "default_user"
     conversation_id: Optional[str] = None
     service_type: str
-    mode: str = "draft"  # draft | confirm
+    mode: Literal["draft", "confirm"]  # 必须显式声明请求语义
     project: Optional[str] = None
     technician_id: Optional[int] = None
     start_time: Optional[datetime] = None
@@ -84,12 +84,14 @@ def create_appointment(request: AppointmentCreateRequest):
                 existing = svc.repo.get_by_idempotency(request.user_id, request.idempotency_key)
                 if existing is not None:
                     return existing
-            # 优先复用会话现有活跃草稿，否则新建
-            draft = None
+            # 有会话时原子复用唯一活跃草稿，否则创建后台预约草稿。
             if request.conversation_id:
-                draft = svc.get_active_draft(request.conversation_id)
-            if draft:
-                draft = svc.update_draft(draft["id"], request.user_id, _fields_of(request))
+                draft = svc.upsert_active_draft(
+                    user_id=request.user_id,
+                    conversation_id=request.conversation_id,
+                    service_type=request.service_type,
+                    fields=_fields_of(request),
+                )
             else:
                 draft = svc.create_draft(
                     user_id=request.user_id,
@@ -100,10 +102,17 @@ def create_appointment(request: AppointmentCreateRequest):
             pending = svc.request_confirmation(draft["id"], request.user_id)
             return svc.confirm(pending["id"], request.user_id, idempotency_key=request.idempotency_key)
 
-        # mode=draft
+        # mode=draft：有会话时原子 upsert，避免唯一索引异常泄漏为 500。
+        if request.conversation_id:
+            return svc.upsert_active_draft(
+                user_id=request.user_id,
+                conversation_id=request.conversation_id,
+                service_type=request.service_type,
+                fields=_fields_of(request),
+            )
         return svc.create_draft(
             user_id=request.user_id,
-            conversation_id=request.conversation_id,
+            conversation_id=None,
             service_type=request.service_type,
             fields=_fields_of(request),
         )

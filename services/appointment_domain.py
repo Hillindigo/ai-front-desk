@@ -12,8 +12,11 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from db.db_router import DatabaseRouter
-from db.models import Appointment, AppointmentEvent
-from db.repositories.appointment_repository import _appointment_to_dict
+from db.models import Appointment, AppointmentEvent, TechnicianSchedule
+from db.repositories.appointment_repository import (
+    ActiveDraftOwnershipError,
+    _appointment_to_dict,
+)
 
 
 class AppointmentDomainError(Exception):
@@ -78,7 +81,15 @@ class AppointmentCommandService:
         fields: Optional[Dict[str, Any]] = None,
         ttl_hours: int = 24,
     ) -> Dict[str, Any]:
-        """创建草稿（每会话唯一活跃草稿由 DB 部分唯一索引保证）。"""
+        """创建草稿；带会话时复用该会话唯一活跃草稿。"""
+        if conversation_id is not None:
+            return self.upsert_active_draft(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                service_type=service_type,
+                fields=fields,
+                ttl_hours=ttl_hours,
+            )
         return self.repo.create_draft(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -86,6 +97,28 @@ class AppointmentCommandService:
             fields=fields,
             ttl_hours=ttl_hours,
         )
+
+    def upsert_active_draft(
+        self,
+        user_id: str,
+        conversation_id: str,
+        service_type: str,
+        fields: Optional[Dict[str, Any]] = None,
+        ttl_hours: int = 24,
+    ) -> Dict[str, Any]:
+        """原子复用会话唯一活跃草稿。"""
+        try:
+            return self.repo.upsert_active_draft(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                service_type=service_type,
+                fields=fields,
+                ttl_hours=ttl_hours,
+            )
+        except ActiveDraftOwnershipError as exc:
+            raise AppointmentDomainError(
+                "APPOINTMENT_NOT_FOUND", "会话中的活跃预约不属于当前用户"
+            ) from exc
 
     def update_draft(
         self, appointment_id: str, user_id: str, fields: Dict[str, Any],
@@ -155,6 +188,20 @@ class AppointmentCommandService:
 
         def _confirm_in_tx(session):
             row = session.query(Appointment).filter(Appointment.id == appointment_id).first()
+            schedule_conflict = (
+                session.query(TechnicianSchedule)
+                .filter(
+                    TechnicianSchedule.technician_id == row.technician_id,
+                    TechnicianSchedule.status == "busy",
+                    TechnicianSchedule.start_time < row.end_time,
+                    TechnicianSchedule.end_time > row.start_time,
+                )
+                .first()
+            )
+            if schedule_conflict:
+                raise AppointmentDomainError(
+                    "TECHNICIAN_UNAVAILABLE", "服务人员在该时段不可用"
+                )
             conflicts = (
                 session.query(Appointment)
                 .filter(
@@ -229,6 +276,20 @@ class AppointmentCommandService:
 
         def _reschedule_in_tx(session):
             row = session.query(Appointment).filter(Appointment.id == appointment_id).first()
+            schedule_conflict = (
+                session.query(TechnicianSchedule)
+                .filter(
+                    TechnicianSchedule.technician_id == row.technician_id,
+                    TechnicianSchedule.status == "busy",
+                    TechnicianSchedule.start_time < new_end_time,
+                    TechnicianSchedule.end_time > new_start_time,
+                )
+                .first()
+            )
+            if schedule_conflict:
+                raise AppointmentDomainError(
+                    "TECHNICIAN_UNAVAILABLE", "服务人员在新时段不可用"
+                )
             conflicts = (
                 session.query(Appointment)
                 .filter(
@@ -261,6 +322,10 @@ class AppointmentCommandService:
             return _appointment_to_dict(row)
 
         return self.repo.run_in_immediate_transaction(_reschedule_in_tx)
+
+    def expire_drafts(self, before: Optional[datetime] = None) -> int:
+        """执行一次可重复的草稿 TTL 清理。"""
+        return self.repo.expire_drafts(before)
 
     # ---------------- 工具 ----------------
 

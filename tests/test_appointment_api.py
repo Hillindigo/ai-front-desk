@@ -36,6 +36,26 @@ class TestAppointmentAPI:
         assert body["status"] == "draft"
         assert body["service_type"] == "肩颈放松"
 
+    def test_repeated_draft_reuses_active_conversation_draft(self, client):
+        first = client.post("/api/v1/appointments", json={
+            "user_id": "u1", "conversation_id": "conv-draft",
+            "service_type": "肩颈放松", "mode": "draft",
+        })
+        second = client.post("/api/v1/appointments", json={
+            "user_id": "u1", "conversation_id": "conv-draft",
+            "service_type": "足疗", "mode": "draft",
+        })
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        assert second.json()["service_type"] == "足疗"
+
+    def test_unknown_mode_is_rejected(self, client):
+        resp = client.post("/api/v1/appointments", json={
+            "user_id": "u1", "service_type": "x", "mode": "unexpected",
+        })
+        assert resp.status_code == 422
+
     def test_confirm_flow_via_api(self, client):
         tid = tech_id(client)
         resp = client.post("/api/v1/appointments", json={

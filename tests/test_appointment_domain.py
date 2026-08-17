@@ -107,6 +107,22 @@ class TestFullFlow:
             service.request_confirmation(draft["id"], "u1")
         assert exc.value.code == "APPOINTMENT_TIME_INVALID"
 
+    def test_confirm_rechecks_schedule_inside_transaction(self, service, router):
+        tech_id = router.technicians.get_all_technicians()[0]["id"]
+        draft = service.create_draft(
+            user_id="u1", conversation_id=None, service_type="x",
+            fields={"technician_id": tech_id, "start_time": dt(10), "end_time": dt(11),
+                    "duration_minutes": 60},
+        )
+        pending = service.request_confirmation(draft["id"], "u1")
+
+        # 排班在 request_confirmation 后发生变化；confirm 仍必须在其事务内重新检查。
+        router.technicians.add_schedule(tech_id, dt(10), dt(11), status="busy")
+        with pytest.raises(AppointmentDomainError) as exc:
+            service.confirm(pending["id"], "u1", idempotency_key="schedule-race")
+        assert exc.value.code == "TECHNICIAN_UNAVAILABLE"
+        assert service.repo.get(pending["id"])["status"] == "pending_confirmation"
+
 
 class TestIdempotency:
     def test_duplicate_confirm_returns_original(self, service, router):
