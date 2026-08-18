@@ -201,3 +201,104 @@ def test_app_endpoints_carry_security_headers():
     assert "x-content-type-options" in r.headers
     assert "referrer-policy" in r.headers
     assert "x-frame-options" in r.headers
+
+
+# --- I1-E3：Cookie / 会话加固 -------------------------------------------------
+
+@pytest.fixture
+def auth_service():
+    from services.admin_auth import AdminAuthService
+
+    service = AdminAuthService()
+    service.clear_for_tests()
+    yield service
+    service.clear_for_tests()
+    service.close()
+
+
+@pytest.fixture
+def admin_client(auth_service):
+    from fastapi.testclient import TestClient
+    from app import create_app
+
+    with TestClient(create_app()) as c:
+        yield c
+
+
+def _provision(service):
+    return service.provision_account(
+        username="owner@example.test", password="Correct-Horse-7!",
+        display_name="Owner", store_name="演示门店", role="owner",
+    )
+
+
+def _login(admin_client):
+    r = admin_client.post("/api/v1/admin/auth/login", json={
+        "username": "owner@example.test", "password": "Correct-Horse-7!",
+    })
+    assert r.status_code == 200
+    return r
+
+
+def test_login_cookie_has_http_only_samesite_and_max_age(admin_client, auth_service):
+    _provision(auth_service)
+    r = _login(admin_client)
+    set_cookies = r.headers.get_list("set-cookie")
+    session_cookie = next(c for c in set_cookies if "admin_session=" in c)
+    assert "HttpOnly" in session_cookie
+    assert "SameSite=lax" in session_cookie
+    assert "Path=/" in session_cookie
+    assert "Max-Age=" in session_cookie
+    # CSRF cookie 需 JS 可读 → 不可 HttpOnly
+    csrf_cookie = next(c for c in set_cookies if "admin_csrf=" in c)
+    assert "HttpOnly" not in csrf_cookie
+    assert "SameSite=lax" in csrf_cookie
+
+
+def test_expired_session_returns_401(admin_client, auth_service):
+    import hashlib
+    from datetime import datetime, timedelta
+
+    from db.models import AdminSession
+
+    _provision(auth_service)
+    _login(admin_client)
+    token = admin_client.cookies["admin_session"]
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with auth_service.session_manager.session_scope() as s:
+        row = s.query(AdminSession).filter_by(token_hash=token_hash).first()
+        assert row is not None
+        row.expires_at = datetime.utcnow() - timedelta(hours=1)
+    assert admin_client.get("/api/v1/admin/auth/me").status_code == 401
+
+
+def test_revoked_session_returns_401(admin_client, auth_service):
+    _provision(auth_service)
+    _login(admin_client)
+    token = admin_client.cookies["admin_session"]
+    auth_service.revoke(token)
+    assert admin_client.get("/api/v1/admin/auth/me").status_code == 401
+    # CSRF 校验（写操作）也随撤销失效
+    csrf = admin_client.cookies["admin_csrf"]
+    r = admin_client.get("/api/v1/admin/auth/me", headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 401
+
+
+def test_production_forces_secure_cookie(monkeypatch):
+    from api.admin_auth import _secure_cookie
+    from config import settings as _s
+
+    monkeypatch.setattr(_s, "is_production", lambda: True)
+    monkeypatch.setattr(_s, "cookie_secure", False)
+    assert _secure_cookie() is True
+
+
+def test_dev_cookie_secure_follows_env(monkeypatch):
+    from api.admin_auth import _secure_cookie
+    from config import settings as _s
+
+    monkeypatch.setattr(_s, "is_production", lambda: False)
+    monkeypatch.setattr(_s, "cookie_secure", False)
+    assert _secure_cookie() is False
+    monkeypatch.setattr(_s, "cookie_secure", True)
+    assert _secure_cookie() is True

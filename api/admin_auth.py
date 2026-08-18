@@ -1,7 +1,6 @@
 """Phase G G1：商家认证、会话和门店上下文 API。"""
 
 from functools import lru_cache
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
@@ -15,10 +14,16 @@ CSRF_COOKIE_NAME = "admin_csrf"
 
 
 def _secure_cookie() -> bool:
-    """Use secure cookies in deployed HTTPS environments, not hard-coded policy."""
-    return os.getenv("ADMIN_COOKIE_SECURE", "false").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    """Cookie Secure 语义（Phase I I1-E3/D12）。
+
+    - 生产模式（APP_ENV=production）强制 Secure=True，即便未显式配置 ADMIN_COOKIE_SECURE。
+    - 开发/测试模式遵循 ADMIN_COOKIE_SECURE（默认 False，便于本地 HTTP 联调）。
+    """
+    from config.settings import settings
+
+    if settings.is_production():
+        return True
+    return settings.cookie_secure
 
 
 class LoginRequest(BaseModel):
