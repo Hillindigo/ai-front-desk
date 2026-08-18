@@ -15,6 +15,8 @@ from db.models import (
     ConversationControlEvent,
     Message,
 )
+from db.repositories.conversation_repository import ConversationRepository
+from db.repositories.appointment_repository import AppointmentRepository
 
 
 class WorkbenchError(ValueError):
@@ -24,6 +26,8 @@ class WorkbenchError(ValueError):
 class AdminWorkbenchService:
     def __init__(self, db_path: Optional[str] = None):
         self.session_manager = SessionManager(db_path)
+        self.conversation_repo = ConversationRepository(self.session_manager)
+        self.appointment_repo = AppointmentRepository(self.session_manager)
 
     def close(self) -> None:
         self.session_manager.close()
@@ -33,7 +37,19 @@ class AdminWorkbenchService:
             rows = session.query(Conversation).filter(
                 Conversation.store_id == store_id
             ).order_by(Conversation.last_activity_at.desc()).limit(min(max(limit, 1), 200)).all()
-            return [self._conversation_dict(row) for row in rows]
+            control_map = {
+                c.conversation_id: c.mode
+                for c in session.query(ConversationControl).filter(
+                    ConversationControl.store_id == store_id
+                ).all()
+            }
+            result = []
+            for row in rows:
+                item = self._conversation_dict(row)
+                # H3：附带控制态，前端可据此筛"待人工/接管中/正常"
+                item["control_mode"] = control_map.get(row.id, "ai_active")
+                result.append(item)
+            return result
 
     def get_detail(self, store_id: int, conversation_id: str) -> Optional[Dict[str, Any]]:
         with self.session_manager.session_scope() as session:
@@ -49,12 +65,15 @@ class AdminWorkbenchService:
             events = session.query(ConversationControlEvent).filter_by(
                 conversation_id=conversation_id, store_id=store_id
             ).order_by(ConversationControlEvent.created_at.asc()).all()
-            return {
+            detail = {
                 **self._conversation_dict(conversation),
                 "messages": [self._message_dict(row) for row in messages],
                 "control": self._control_dict(control),
                 "control_events": [self._event_dict(row) for row in events],
             }
+        # H3：关联该会话的预约（独立事务读取，避免嵌套连接与写锁）
+        detail["appointments"] = self.appointment_repo.list_by_conversation(conversation_id, limit=10)
+        return detail
 
     def change_control(
         self,
@@ -119,6 +138,51 @@ class AdminWorkbenchService:
                         request_id, {"content_length": len(content.strip())})
             session.flush()
             return self._event_dict(event)
+
+    def human_reply(
+        self,
+        store_id: int,
+        conversation_id: str,
+        actor_id: int,
+        text: str,
+        request_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """人工回复：人工消息写入同一会话事实来源（message_type=human）；自动置人工接管态并审计。
+
+        接管期间的 AI 继续由 orchestrator 的 chat_control（human_active）阻断，
+        保证不会出现 AI/人工双重回复；buyer 刷新后可读到人工结果。
+        """
+        text = (text or "").strip()
+        if not text:
+            raise WorkbenchError("回复内容不能为空")
+        with self.session_manager.session_scope() as session:
+            conversation = session.query(Conversation).filter_by(
+                id=conversation_id, store_id=store_id
+            ).first()
+            if conversation is None:
+                return None
+            control = self._ensure_control(session, conversation)
+            control.mode = "human_active"
+            control.assignee_id = actor_id
+            control.updated_at = datetime.utcnow()
+            event = ConversationControlEvent(
+                id=secrets.token_urlsafe(24), conversation_id=conversation_id,
+                store_id=store_id, actor_id=actor_id, action="human_reply",
+                content=text, created_at=datetime.utcnow(),
+            )
+            session.add(event)
+            self._audit(session, actor_id, store_id, "conversation.human_reply",
+                        conversation_id, request_id, {"text_length": len(text)})
+            session.flush()
+        msg = self.conversation_repo.add_message(
+            conversation_id, "assistant", text, message_type="human",
+            metadata={"agent_origin": "human", "actor_id": actor_id},
+        )
+        return {
+            "message": msg,
+            "control": {"conversation_id": conversation_id,
+                        "mode": "human_active", "assignee_id": actor_id},
+        }
 
     @staticmethod
     def _ensure_control(session, conversation) -> ConversationControl:

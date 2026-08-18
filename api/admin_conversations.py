@@ -121,3 +121,25 @@ def add_note(
     if event is None:
         raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在"})
     return event
+
+
+@router.post("/{conversation_id}/reply", status_code=200)
+def human_reply(
+    conversation_id: str,
+    body: NoteBody,
+    request: Request,
+    identity=Depends(require_permission("manage_conversations")),
+    _csrf=Depends(require_csrf),
+    service: AdminWorkbenchService = Depends(get_workbench_service),
+):
+    """人工回复：人工消息写入同一会话，自动置人工接管态并审计（H3）。"""
+    try:
+        result = service.human_reply(
+            _store_id(identity), conversation_id, identity["actor"]["actor_id"],
+            body.content, _request_id(request),
+        )
+    except WorkbenchError as exc:
+        raise _error(exc)
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在"})
+    return result

@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from application.contracts import IntentClassification, IntentType
 from application.orchestrator import ConversationOrchestrator, IntentRouter
+from application.conversation_control import ConversationControlResolver
 from application.workflows import AppointmentWorkflow, ConsultationWorkflow, UnrelatedWorkflow
 from db.db_router import DatabaseRouter
 from services.appointment_domain import AppointmentCommandService
@@ -117,6 +118,7 @@ class Container:
             context_builder=self.context_builder,
             summary_service=self.summary_service,
             preference_service=self.preference_service,
+            chat_control=ConversationControlResolver(self.db_router),
         )
 
     def close(self) -> None:

@@ -70,6 +70,7 @@ class EventType(str, Enum):
     TOOL_RESULT = "tool_result"
     ASSISTANT_DELTA = "assistant_delta"
     ASSISTANT_MESSAGE = "assistant_message"
+    HANDOFF_REQUIRED = "handoff_required"  # H3：已转人工/人工接管中，AI 不继续
     RUN_COMPLETED = "run_completed"  # 终止事件
     RUN_FAILED = "run_failed"        # 终止事件
 

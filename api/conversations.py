@@ -103,14 +103,20 @@ def conversation_sources(conversation_id: str, user_id: str = "default_user"):
 
 @router.get("/{conversation_id}")
 def get_conversation(conversation_id: str, user_id: str = "default_user"):
-    """获取会话元数据与最近消息（恢复历史）。"""
-    session = _resolve_session(conversation_id, user_id)
+    """获取会话元数据与最近消息（恢复历史）。
+
+    消息直接读数据库最新（H3：商家人工回复等外部写入可被买家刷新读到），
+    不依赖运行时缓存快照；数据权威在数据库。
+    """
+    _resolve_session(conversation_id, user_id)
+    messages = get_container().db_router.conversations.get_recent_messages(conversation_id, limit=50)
+    session = get_session_manager().get_or_create_session(conversation_id, user_id=user_id)
     return {
         "conversation_id": session.conversation_id,
         "user_id": session.user_id,
         "channel": session.channel,
         "status": session.status,
-        "messages": session.recent_messages,
+        "messages": messages or [],
     }
 
 

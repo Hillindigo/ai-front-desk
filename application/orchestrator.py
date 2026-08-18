@@ -63,6 +63,7 @@ class ConversationOrchestrator:
         context_builder: Optional[Any] = None,   # Phase E E5：统一上下文装配
         summary_service: Optional[Any] = None,   # Phase E E5：摘要旁路（失败不阻断）
         preference_service: Optional[Any] = None,  # Phase E E5：偏好命令确定性路由
+        chat_control: Optional[Any] = None,     # Phase H H3：会话控制（接管/转人工）
     ):
         self.session_manager = session_manager
         self.router = router or IntentRouter()
@@ -76,6 +77,7 @@ class ConversationOrchestrator:
         self.context_builder = context_builder
         self.summary_service = summary_service
         self.preference_service = preference_service
+        self.chat_control = chat_control
 
     def _ensure_agent(self, session) -> None:
         if session.agent is None and self.agent_factory is not None:
@@ -156,6 +158,50 @@ class ConversationOrchestrator:
                 session.append_message(user_msg)
 
             yield stream.next(EventType.RUN_STARTED, {"request_id": request_id} if request_id else None)
+
+            # 1.2 会话控制（Phase H H3）：人工接管/待人工期间禁止 AI 继续；
+            # 买家可主动请求转人工。均不触发工作流/模型，避免 AI/人工双重回复。
+            if self.chat_control is not None:
+                try:
+                    if self.chat_control.ai_blocked(conversation_id):
+                        hint = self.chat_control.demand_hint(conversation_id)
+                        yield stream.next(EventType.HANDOFF_REQUIRED, {"message": hint})
+                        handoff_meta = {"intent": {"intent": "handoff"}, "evidence": []}
+                        if request_id:
+                            handoff_meta["client_request_id"] = request_id
+                        h_msg = self.session_manager.repository.add_message(
+                            conversation_id, "assistant", hint, metadata=handoff_meta,
+                        )
+                        if h_msg:
+                            session.append_message(h_msg)
+                        stream.mark_terminal()
+                        yield stream.next(EventType.RUN_COMPLETED, {
+                            "conversation_id": conversation_id,
+                            "message_id": h_msg["id"] if h_msg else None,
+                            "intent": {"intent": "handoff"},
+                        })
+                        return
+                    if self._is_human_request(user_input):
+                        self.chat_control.request_human(conversation_id)
+                        hint = self.chat_control.demand_hint(conversation_id)
+                        yield stream.next(EventType.HANDOFF_REQUIRED, {"message": hint})
+                        handoff_meta = {"intent": {"intent": "handoff"}, "evidence": []}
+                        if request_id:
+                            handoff_meta["client_request_id"] = request_id
+                        h_msg = self.session_manager.repository.add_message(
+                            conversation_id, "assistant", hint, metadata=handoff_meta,
+                        )
+                        if h_msg:
+                            session.append_message(h_msg)
+                        stream.mark_terminal()
+                        yield stream.next(EventType.RUN_COMPLETED, {
+                            "conversation_id": conversation_id,
+                            "message_id": h_msg["id"] if h_msg else None,
+                            "intent": {"intent": "handoff"},
+                        })
+                        return
+                except Exception:
+                    logger.exception("会话控制检查异常，放行 AI 处理")
 
             try:
                 # 1.5 统一上下文装配（Phase E E5：只读、无副作用；失败降级为空上下文）
@@ -374,3 +420,15 @@ class ConversationOrchestrator:
             if head.startswith(guide):
                 return head[len(guide):]
         return head
+
+    # ---------------- Phase H H3：转人工 ----------------
+    _HUMAN_KEYWORDS = (
+        "转人工", "人工客服", "找人工", "真人客服", "人工服务",
+        "转接人工", "接入人工", "人工处理", "联系人工",
+    )
+
+    @staticmethod
+    def _is_human_request(text: str) -> bool:
+        """启发式判断是否为转人工请求（确定性规则，不依赖 LLM）。"""
+        t = text or ""
+        return any(k in t for k in ConversationOrchestrator._HUMAN_KEYWORDS)

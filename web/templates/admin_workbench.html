@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话工作台 · AI Front Desk</title>
+<style>
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+  .topbar { background: #111827; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  .topbar a { color: #9ca3af; text-decoration: none; font-size: 13px; }
+  .topbar a:hover { color: #fff; }
+  .wrap { max-width: 1200px; margin: 20px auto; padding: 0 16px; display: flex; gap: 20px; align-items: flex-start; }
+  .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; }
+  .list-panel { flex: 1 1 40%; }
+  .detail-panel { flex: 1 1 60%; min-width: 0; }
+  h2 { margin: 0 0 12px; font-size: 18px; }
+  .filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filters button { padding: 4px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 20px; cursor: pointer; font-size: 12px; }
+  .filters button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+  th { color: #6b7280; font-weight: 600; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: #f8fafc; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .b-ai { background: #e0f2fe; color: #0369a1; }
+  .b-human { background: #fee2e2; color: #b91c1c; }
+  .b-pending { background: #fef3c7; color: #b45309; }
+  .msg { border-left: 3px solid #d1d5db; margin: 6px 0; padding: 6px 10px; border-radius: 4px; background: #f9fafb; }
+  .msg.user { border-left-color: #2563eb; }
+  .msg.assistant { border-left-color: #10b981; }
+  .msg .who { font-size: 11px; color: #6b7280; margin-bottom: 2px; }
+  .msg .human-tag { color: #b91c1c; font-weight: 600; }
+  .ops { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button.action { padding: 6px 14px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-size: 13px; }
+  button.action.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  input[type=text], textarea { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 100%; box-sizing: border-box; }
+  .empty { color: #9ca3af; font-size: 13px; padding: 20px 0; text-align: center; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 8px; }
+  .appt { border: 1px solid #e0e7ff; background: #eef2ff; border-radius: 6px; padding: 6px 10px; margin: 4px 0; font-size: 12px; }
+  .events { font-size: 12px; color: #4b5563; margin-top: 6px; }
+  .events div { margin: 2px 0; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <strong>AI Front Desk · 会话工作台</strong>
+  <a href="/admin">← 返回仪表板</a>
+  <span style="margin-left:auto;font-size:13px;">{{ actor.name if actor else '' }}（{{ role if role else '' }}）· {{ active_store.name if active_store else '' }}</span>
+</div>
+
+<div class="wrap">
+  <div class="panel list-panel">
+    <h2>会话列表</h2>
+    <div class="filters" id="filters">
+      <button data-f="all" class="on">全部</button>
+      <button data-f="awaiting_human">待人工</button>
+      <button data-f="human_active">接管中</button>
+      <button data-f="ai_active">AI 正常</button>
+    </div>
+    <div id="list"><div class="empty">加载中...</div></div>
+  </div>
+
+  <div class="panel detail-panel">
+    <h2 id="dt-title">会话详情</h2>
+    <div id="detail"><div class="empty">从左侧选择一个会话</div></div>
+  </div>
+</div>
+
+<script>
+var CSRF = (document.cookie.split('; ').find(function (c) { return c.indexOf('admin_csrf=') === 0; }) || '').split('=')[1] || '';
+function api(path, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Content-Type'] = 'application/json';
+  if (CSRF) opts.headers['X-CSRF-Token'] = CSRF;
+  if (opts.body && typeof opts.body === 'object') opts.body = JSON.stringify(opts.body);
+  return fetch(path, opts);
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+var MODE_LABEL = {'ai_active':'AI 正常','human_active':'接管中','awaiting_human':'待人工'};
+var MODE_BADGE = {'ai_active':'b-ai','human_active':'b-human','awaiting_human':'b-pending'};
+var currentFilter = 'all';
+var currentCid = null;
+
+function loadList() {
+  api('/api/v1/admin/conversations').then(function (r) {
+    if (!r.ok) { document.getElementById('list').innerHTML = '<div class="err">加载失败（http ' + r.status + '）</div>'; return; }
+    return r.json();
+  }).then(function (data) {
+    var items = (data && data.items) || [];
+    var html = '<table><thead><tr><th>会话</th><th>状态</th><th>动作</th></tr></thead><tbody>';
+    items.forEach(function (row) {
+      if (currentFilter !== 'all' && row.control_mode !== currentFilter) return;
+      var mode = row.control_mode || 'ai_active';
+      html += '<tr class="row" data-id="' + esc(row.conversation_id) + '">' +
+        '<td>' + esc(row.conversation_id.slice(0, 8)) + '<br><span style="color:#6b7280;font-size:11px;">' + esc(row.user_id) + '</span></td>' +
+        '<td><span class="badge ' + MODE_BADGE[mode] + '">' + MODE_LABEL[mode] + '</span></td>' +
+        '<td><button class="action" data-act="open">详情</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    if (items.filter(function (r) { return currentFilter === 'all' || r.control_mode === currentFilter; }).length === 0) {
+      html = '<div class="empty">暂无会话</div>';
+    }
+    var list = document.getElementById('list');
+    list.innerHTML = html;
+    list.querySelectorAll('tr.row').forEach(function (tr) {
+      tr.addEventListener('click', function (e) {
+        if (e.target && e.target.dataset && e.target.dataset.act) return;
+        openDetail(tr.dataset.id);
+      });
+      tr.querySelector('button[data-act=open]').addEventListener('click', function () { openDetail(tr.dataset.id); });
+    });
+  });
+}
+
+function openDetail(cid) {
+  currentCid = cid;
+  api('/api/v1/admin/conversations/' + cid).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    if (!d) { document.getElementById('detail').innerHTML = '<div class="err">加载详情失败</div>'; return; }
+    document.getElementById('dt-title').textContent = '会话详情 #' + cid.slice(0, 8);
+    var ctl = d.control || {};
+    var mode = ctl.mode || 'ai_active';
+    var html = '<p><span class="badge ' + MODE_BADGE[mode] + '">' + MODE_LABEL[mode] + '</span>' +
+      ' <span style="color:#6b7280;font-size:12px;">用户 ' + esc(d.user_id) + '</span></p>';
+    // 预约关联
+    if (d.appointments && d.appointments.length) {
+      html += '<div style="font-size:13px;color:#3730a3;font-weight:600;">预约关联</div>';
+      d.appointments.forEach(function (a) {
+        html += '<div class="appt">#' + esc(a.id.slice(0, 8)) + '「' + esc(a.project || a.service_type || '—') + '」' +
+          esc(a.status) + (a.start_time ? ' · ' + esc(a.start_time.replace('T', ' ').slice(0, 16)) : '') + '</div>';
+      });
+    }
+    // 消息时间线
+    html += '<div style="margin-top:10px;font-size:13px;color:#333;font-weight:600;">消息</div>';
+    (d.messages || []).forEach(function (m) {
+      var tag = (m.message_type === 'human') ? '<span class="human-tag">[人工]</span> ' : '';
+      html += '<div class="msg ' + esc(m.role) + '"><div class="who">' + esc(m.role) + ' · #' + esc(m.sequence) + ' ' + tag + '</div>' +
+        ((m.content || '').replace(/\n/g, '<br>')) + '</div>';
+    });
+    // 控制事件
+    html += '<div class="events"><div style="font-weight:600;">控制/备注事件</div>';
+    (d.control_events || []).forEach(function (ev) {
+      html += '<div>[' + esc(ev.action) + '] ' + esc(ev.content || '') + ' · ' + esc(ev.created_at || '').replace('T', ' ').slice(0, 16) + '</div>';
+    });
+    html += '</div>';
+    // 操作
+    html += '<div class="ops">';
+    if (mode !== 'human_active') html += '<button class="action primary" data-op="takeover">接管</button>';
+    if (mode === 'human_active') html += '<button class="action" data-op="resume">恢复 AI</button>';
+    html += '<button class="action" data-op="note">加备注</button></div>';
+    html += '<div style="margin-top:12px;"><textarea id="reply-input" rows="2" placeholder="人工回复内容..."></textarea>' +
+      '<div class="ops"><button class="action primary" data-op="reply">发送人工回复</button></div></div>';
+    html += '<div id="op-msg"></div>';
+    var detail = document.getElementById('detail');
+    detail.innerHTML = html;
+    detail.querySelector('button[data-op=takeover]').addEventListener('click', function () { doControl('takeover', {}); });
+    var resume = detail.querySelector('button[data-op=resume]');
+    if (resume) resume.addEventListener('click', function () { doControl('resume', {}); });
+    detail.querySelector('button[data-op=note]').addEventListener('click', function () {
+      var content = prompt('内部备注内容：');
+      if (content) doControl('notes', {content: content}, 201);
+    });
+    detail.querySelector('button[data-op=reply]').addEventListener('click', function () {
+      var text = detail.querySelector('#reply-input').value.trim();
+      if (!text) { setOp('人工回复内容不能为空'); return; }
+      doControl('reply', {content: text});
+    });
+  });
+}
+
+function doControl(op, body, expectStatus) {
+  var path = '/api/v1/admin/conversations/' + currentCid + '/' + op;
+  api(path, {method: 'POST', body: body}).then(function (r) {
+    if (!r.ok) {
+      return r.json().then(function (j) {
+        throw new Error((j.detail && (j.detail.message || j.detail.code)) || ('http ' + r.status));
+      });
+    }
+    if (expectStatus && r.status !== expectStatus) { throw new Error('http ' + r.status); }
+    setOp(op + ' 成功');
+    openDetail(currentCid);
+    loadList();
+  }).catch(function (e) { setOp('操作失败：' + e.message); });
+}
+
+function setOp(msg) {
+  var el = document.getElementById('op-msg');
+  if (el) el.innerHTML = '<div class="err">' + esc(msg) + '</div>';
+}
+
+document.getElementById('filters').addEventListener('click', function (e) {
+  var btn = e.target.closest('button');
+  if (!btn) return;
+  currentFilter = btn.dataset.f;
+  document.querySelectorAll('#filters button').forEach(function (b) { b.classList.remove('on'); });
+  btn.classList.add('on');
+  loadList();
+});
+
+loadList();
+</script>
+</body>
+</html>

@@ -218,6 +218,20 @@ async def admin_dashboard(
             "error": str(e)
         })
 
+@router.get("/admin/workbench", response_class=HTMLResponse, summary="会话工作台页面")
+async def admin_workbench_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
+    """商家会话工作台（H3）：列表/详情/接管/人工回复/恢复AI。"""
+    return _render_template("admin_workbench.html", {
+        "request": request,
+        "actor": identity["actor"],
+        "active_store": identity["active_store"],
+        "role": identity["role"],
+    })
+
+
 @router.get("/admin/database", response_class=HTMLResponse, summary="数据库管理页面")
 async def database_admin_page(
     request: Request,
