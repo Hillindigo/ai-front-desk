@@ -21,7 +21,8 @@ def live():
 
 @router.get("/ready")
 def ready():
-    checks = {"database": False, "migration": False, "knowledge_version": None}
+    checks = {"database": False, "migration": False, "knowledge_version": None,
+              "local_index_version": None, "knowledge_stale": None}
     reason = []
     sm = SessionManager()
     try:
@@ -41,18 +42,32 @@ def ready():
                 "SELECT value FROM knowledge_meta WHERE key='knowledge_version' "
                 "ORDER BY updated_at DESC LIMIT 1"
             )).fetchone()
-            if version is not None and version[0] is not None:
-                checks["knowledge_version"] = version[0]
-            else:
-                # 无发布记录也认为结构就绪（空库可启动），但标记为 unknown
-                checks["knowledge_version"] = "unknown"
-            if not checks["database"] or not checks["migration"]:
-                reason.append("database_or_migration_unavailable")
+            checks["knowledge_version"] = version[0] if (version and version[0] is not None) else "unknown"
     except Exception:
         reason.append("database_unreachable")
     finally:
         sm.close()
 
-    if not checks["database"] or not checks["migration"]:
-        return JSONResponse(status_code=503, content={"ready": False, "checks": checks, "reason": reason})
-    return JSONResponse(status_code=200, content={"ready": True, "checks": checks})
+    # Phase I I4-A：本地索引版本对比（单实例一致性探测；不可用时降级为 null）
+    try:
+        from api.chat_handler import get_container
+        local = get_container().knowledge_service.get_source_version()
+        checks["local_index_version"] = local
+    except Exception:
+        checks["local_index_version"] = None
+
+    dbv = checks["knowledge_version"]
+    localv = checks["local_index_version"]
+    if isinstance(dbv, (int, float)):
+        dbv = int(dbv)
+        if isinstance(localv, str) and localv.startswith("index-"):
+            local_idx = int(localv.split("-")[1])
+            checks["knowledge_stale"] = (local_idx != dbv)
+        else:
+            checks["knowledge_stale"] = None
+
+    requires = checks.get("migration") is True and checks.get("database") is True
+    if not requires:
+        reason.append("database_or_migration_unavailable")
+    status = 200 if requires else 503
+    return JSONResponse(status_code=status, content={"ready": requires, "checks": checks, "reason": reason})
