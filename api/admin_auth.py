@@ -1,6 +1,7 @@
 """Phase G G1：商家认证、会话和门店上下文 API。"""
 
 from functools import lru_cache
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
@@ -10,6 +11,14 @@ from services.admin_auth import AdminAuthService, SESSION_COOKIE_NAME
 from application.admin_permissions import has_permission
 
 router = APIRouter(prefix="/api/v1/admin/auth", tags=["商家认证"])
+CSRF_COOKIE_NAME = "admin_csrf"
+
+
+def _secure_cookie() -> bool:
+    """Use secure cookies in deployed HTTPS environments, not hard-coded policy."""
+    return os.getenv("ADMIN_COOKIE_SECURE", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
 
 
 class LoginRequest(BaseModel):
@@ -88,7 +97,16 @@ def login(
         value=identity["session_token"],
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=_secure_cookie(),
+        max_age=8 * 60 * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=identity["csrf_token"],
+        httponly=False,
+        samesite="lax",
+        secure=_secure_cookie(),
         max_age=8 * 60 * 60,
         path="/",
     )
@@ -130,3 +148,4 @@ def logout(
 ):
     service.revoke(_current_token(request))
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
