@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Front Desk 商家后台</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f6f7fb; color: #172033; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 18px 28px; background: #172033; color: white; }
+    main { max-width: 1180px; margin: 28px auto; padding: 0 20px; }
+    .meta, .card { background: white; border: 1px solid #e2e6ef; border-radius: 12px; padding: 18px; box-shadow: 0 2px 8px #17203312; }
+    .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    a { color: #315bdc; text-decoration: none; font-weight: 600; }
+    a:hover { text-decoration: underline; }
+    .value { font-size: 1.5rem; font-weight: 700; margin-top: 8px; }
+    nav { display: flex; gap: 16px; flex-wrap: wrap; }
+    small { color: #667085; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>AI Front Desk · 商家运营后台</strong>
+    <span>{{ actor.display_name }}（{{ role }}）</span>
+  </header>
+  <main>
+    <section class="meta" aria-label="当前上下文">
+      <div><small>当前门店</small><div class="value">{{ active_store.name }}</div></div>
+      <div><small>时区</small><div class="value">{{ active_store.timezone }}</div></div>
+      <div><small>身份</small><div class="value">{{ actor.username }}</div></div>
+    </section>
+    <section class="grid" aria-label="运营概览">
+      <div class="card"><small>知识文档</small><div class="value">{{ db_info.knowledge_count }}</div></div>
+      <div class="card"><small>服务人员</small><div class="value">{{ db_info.technicians_count }}</div></div>
+      <div class="card"><small>知识分类</small><div class="value">{{ db_info.categories_count }}</div></div>
+    </section>
+    <section class="card" style="margin-top:20px">
+      <h2>运营模块</h2>
+      <nav>
+        <a href="/knowledge">知识管理</a>
+        <a href="/technician">服务人员</a>
+        <a href="/technician_schedule">排班</a>
+        <a href="/api/v1/admin/conversations">会话工作台 API</a>
+        <a href="/api/v1/admin/appointments">预约管理 API</a>
+        <a href="/api/v1/admin/customers">客户运营 API</a>
+        <a href="/api/v1/admin/audit">审计 API</a>
+        <a href="/api/v1/admin/metrics">指标 API</a>
+      </nav>
+      <p><small>页面展示用于导航；所有读写能力仍由服务端身份、门店和角色权限控制。</small></p>
+    </section>
+  </main>
+</body>
+</html>

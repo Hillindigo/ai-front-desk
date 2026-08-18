@@ -188,13 +188,19 @@ async def admin_dashboard(
         return _render_template("admin_dashboard.html", {
             "request": request,
             "db_info": db_info,
-            "technicians": technicians[:5]  # 只显示前5个服务人员
+            "technicians": technicians[:5],
+            "actor": identity["actor"],
+            "active_store": identity["active_store"],
+            "role": identity["role"],
         })
     except Exception as e:
         return _render_template("admin_dashboard.html", {
             "request": request,
             "db_info": {},
             "technicians": [],
+            "actor": identity["actor"],
+            "active_store": identity["active_store"],
+            "role": identity["role"],
             "error": str(e)
         })
 
