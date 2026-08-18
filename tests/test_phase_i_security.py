@@ -356,3 +356,47 @@ async def test_general_handler_returns_generic_body():
 def _make_request(scope):
     from starlette.requests import Request
     return Request(scope)
+
+
+# --- I1-E5：越权回归（横向回归买家归属 / 商家 RBAC / CSRF） --------------------
+
+def test_buyer_cross_user_ownership_denied():
+    from starlette.testclient import TestClient
+    from app import app as fastapi_app
+
+    client = TestClient(fastapi_app)
+    conv = client.post("/api/v1/conversations", json={"user_id": "alice"}).json()
+    cid = conv["conversation_id"]
+    own = client.get(f"/api/v1/conversations/{cid}", params={"user_id": "alice"})
+    assert own.status_code == 200
+    other = client.get(f"/api/v1/conversations/{cid}", params={"user_id": "bob"})
+    assert other.status_code == 403
+    assert other.json()["detail"]["code"] == "CONVERSATION_ACCESS_DENIED"
+
+
+def test_rbac_viewer_denied_privileged_endpoint(admin_client, auth_service):
+    _provision(auth_service)
+    auth_service.provision_account(
+        "viewer@example.test", "Correct-Horse-7!", "只读账号", "演示门店", "viewer"
+    )
+    login = admin_client.post("/api/v1/admin/auth/login", json={
+        "username": "viewer@example.test", "password": "Correct-Horse-7!",
+    })
+    assert login.status_code == 200
+    # viewer 无 read_audit → 403
+    r = admin_client.get("/api/v1/admin/audit")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "PERMISSION_DENIED"
+
+
+def test_admin_write_requires_csrf(admin_client, auth_service):
+    _provision(auth_service)
+    _login(admin_client)
+    # 缺少 X-CSRF-Token 的写操作（登录/切/退）被拒
+    r = admin_client.post("/api/v1/admin/auth/logout")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "CSRF_INVALID"
+    # 带 token 可正常登出
+    csrf = admin_client.cookies["admin_csrf"]
+    r = admin_client.post("/api/v1/admin/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 204
