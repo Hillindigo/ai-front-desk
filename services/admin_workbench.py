@@ -173,11 +173,17 @@ class AdminWorkbenchService:
             session.add(event)
             self._audit(session, actor_id, store_id, "conversation.human_reply",
                         conversation_id, request_id, {"text_length": len(text)})
+            msg = self.conversation_repo.add_message_in_session(
+                session,
+                conversation_id,
+                "assistant",
+                text,
+                message_type="human",
+                metadata={"agent_origin": "human", "actor_id": actor_id},
+            )
+            if msg is None:
+                raise WorkbenchError("会话不存在")
             session.flush()
-        msg = self.conversation_repo.add_message(
-            conversation_id, "assistant", text, message_type="human",
-            metadata={"agent_origin": "human", "actor_id": actor_id},
-        )
         return {
             "message": msg,
             "control": {"conversation_id": conversation_id,

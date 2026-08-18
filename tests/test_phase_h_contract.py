@@ -20,6 +20,7 @@ from app import create_app
 from db.db_router import DatabaseRouter
 from services.admin_auth import AdminAuthService
 from services.technician_service import TechnicianService
+from application.conversation_control import ConversationControlResolver
 
 
 @pytest.fixture
@@ -83,6 +84,21 @@ class TestSSEContractAudit:
         blob = json.dumps(events, ensure_ascii=False)
         for marker in ("[THOUGHT]", "[SIGNAL]", "[REPLY]", "[ERROR]"):
             assert marker not in blob
+
+    def test_control_failure_fails_closed_without_ai_reply(self, client, monkeypatch):
+        """会话控制状态读取失败时，不能放行 AI 工作流。"""
+        cid = create_conv(client)
+
+        def fail_closed(_self, _conversation_id):
+            raise RuntimeError("control store unavailable")
+
+        monkeypatch.setattr(ConversationControlResolver, "ai_blocked", fail_closed)
+        events = turns(client, cid, "请问营业时间")
+        types = [event["type"] for event in events]
+
+        assert "assistant_delta" not in types
+        assert types[-1] == "run_failed"
+        assert events[-1]["data"]["error"] == "INTERNAL_ERROR"
 
 
 class TestErrorCodeConsistency:

@@ -145,35 +145,58 @@ class ConversationRepository:
 
         会话不存在时返回 None（禁止写入无归属消息）。
         """
-        now = datetime.utcnow()
         with self.session_manager.session_scope() as session:
-            conv = session.query(Conversation).filter(Conversation.id == conversation_id).first()
-            if conv is None:
-                return None
-
-            max_seq = (
-                session.query(Message.sequence)
-                .filter(Message.conversation_id == conversation_id)
-                .order_by(Message.sequence.desc())
-                .first()
-            )
-            next_seq = (max_seq[0] + 1) if max_seq else 1
-
-            msg = Message(
-                conversation_id=conversation_id,
-                role=role,
-                content=content,
+            return self.add_message_in_session(
+                session,
+                conversation_id,
+                role,
+                content,
                 message_type=message_type,
-                metadata_json=json.dumps(metadata, ensure_ascii=False) if metadata is not None else None,
-                sequence=next_seq,
-                created_at=now,
+                metadata=metadata,
             )
-            session.add(msg)
-            conv.updated_at = now
-            conv.last_activity_at = now
-            session.flush()
-            session.refresh(msg)
-            return _message_to_dict(msg)
+
+    def add_message_in_session(
+        self,
+        session,
+        conversation_id: str,
+        role: str,
+        content: str,
+        message_type: str = "text",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """在调用方事务中追加消息，并更新会话活动时间。
+
+        需要把消息与其他领域事实（例如人工接管、控制事件和审计）
+        原子提交时使用此方法；调用方负责提交或回滚事务。
+        """
+        now = datetime.utcnow()
+        conv = session.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if conv is None:
+            return None
+
+        max_seq = (
+            session.query(Message.sequence)
+            .filter(Message.conversation_id == conversation_id)
+            .order_by(Message.sequence.desc())
+            .first()
+        )
+        next_seq = (max_seq[0] + 1) if max_seq else 1
+
+        msg = Message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            message_type=message_type,
+            metadata_json=json.dumps(metadata, ensure_ascii=False) if metadata is not None else None,
+            sequence=next_seq,
+            created_at=now,
+        )
+        session.add(msg)
+        conv.updated_at = now
+        conv.last_activity_at = now
+        session.flush()
+        session.refresh(msg)
+        return _message_to_dict(msg)
 
     def get_turn_by_request_id(
         self,

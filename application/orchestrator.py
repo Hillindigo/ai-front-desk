@@ -201,7 +201,14 @@ class ConversationOrchestrator:
                         })
                         return
                 except Exception:
-                    logger.exception("会话控制检查异常，放行 AI 处理")
+                    # 控制状态未知时必须 fail-closed，不能放行 AI，避免与人工回复并发。
+                    logger.exception("会话控制检查异常，阻断本轮 AI 处理")
+                    stream.mark_terminal()
+                    yield stream.next(EventType.RUN_FAILED, {
+                        "error": ErrorCode.INTERNAL_ERROR.value,
+                        "message": self._safe_error_message(ErrorCode.INTERNAL_ERROR),
+                    })
+                    return
 
             try:
                 # 1.5 统一上下文装配（Phase E E5：只读、无副作用；失败降级为空上下文）

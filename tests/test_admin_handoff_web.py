@@ -17,7 +17,9 @@ from fastapi.testclient import TestClient
 
 from app import create_app
 from db.db_router import DatabaseRouter
+from db.models import AuditEvent, ConversationControl, ConversationControlEvent, Message
 from services.admin_auth import AdminAuthService
+from services.admin_workbench import AdminWorkbenchService
 
 
 @pytest.fixture
@@ -164,6 +166,38 @@ class TestHumanReply:
         r = client.post(f"/api/v1/admin/conversations/{cid}/reply",
                         json={"content": "   "}, headers={"X-CSRF-Token": csrf})
         assert r.status_code == 422
+
+    def test_reply_facts_roll_back_together_on_message_failure(self, auth_service, monkeypatch):
+        """人工消息失败时，控制态、控制事件和审计不能单独提交。"""
+        account = auth_service.provision_account(
+            "atomic-h3@example.test", "Correct-Horse-7!", "原子性测试", "原子性门店", "owner"
+        )
+        cid = make_conversation(account["store_id"])
+        service = AdminWorkbenchService()
+
+        def fail_message(*_args, **_kwargs):
+            raise RuntimeError("message insert failed")
+
+        monkeypatch.setattr(service.conversation_repo, "add_message_in_session", fail_message)
+        try:
+            with pytest.raises(RuntimeError, match="message insert failed"):
+                service.human_reply(
+                    account["store_id"], cid, account["actor_id"], "这条回复不会提交"
+                )
+        finally:
+            service.close()
+
+        router = DatabaseRouter()
+        try:
+            with router.session_manager.session_scope() as session:
+                assert session.query(Message).filter_by(conversation_id=cid).count() == 0
+                assert session.query(ConversationControl).filter_by(conversation_id=cid).count() == 0
+                assert session.query(ConversationControlEvent).filter_by(conversation_id=cid).count() == 0
+                assert session.query(AuditEvent).filter_by(
+                    resource_type="conversation", resource_id=cid,
+                ).count() == 0
+        finally:
+            router.close()
 
 
 class TestAccessControl:
