@@ -6,6 +6,7 @@ from typing import FrozenSet
 ADMIN_PERMISSIONS = frozenset(
     {
         "view_sessions",
+        "manage_conversations",
         "publish_knowledge",
         "manage_store",
         "write_appointments",
@@ -21,6 +22,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
     "manager": frozenset(
         {
             "view_sessions",
+            "manage_conversations",
             "publish_knowledge",
             "manage_store",
             "write_appointments",
@@ -32,6 +34,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
     "operator": frozenset(
         {
             "view_sessions",
+            "manage_conversations",
             "write_appointments",
             "read_customer_preferences",
         }

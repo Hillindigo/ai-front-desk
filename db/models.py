@@ -293,6 +293,32 @@ class AuditEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ConversationControl(Base):
+    """会话当前控制状态；人工接管不是不可追踪的布尔字段。"""
+
+    __tablename__ = "conversation_controls"
+
+    conversation_id = Column(String(36), primary_key=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    mode = Column(String(24), nullable=False, default="ai_active")
+    assignee_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ConversationControlEvent(Base):
+    """接管、恢复、备注和异常标记的不可变事件。"""
+
+    __tablename__ = "conversation_control_events"
+
+    id = Column(String(64), primary_key=True)
+    conversation_id = Column(String(36), nullable=False, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    actor_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=False, index=True)
+    action = Column(String(32), nullable=False)
+    content = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class StoreMembership(Base):
     """商家账号到门店的角色关系。"""
 
