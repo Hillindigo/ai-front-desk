@@ -20,7 +20,11 @@ import os
 
 # 导入路由
 from api import api_routers
-from api.core.exceptions import api_exception_handler, general_exception_handler, BusinessException
+from api.core.exceptions import (
+    api_exception_handler, general_exception_handler, BusinessException,
+    request_validation_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from web import router as web_router
 
 # 配置日志
@@ -121,6 +125,8 @@ def create_app() -> FastAPI:
     # 注册异常处理器
     app.add_exception_handler(BusinessException, api_exception_handler)
     app.add_exception_handler(Exception, general_exception_handler)
+    # Phase I I1-E4：校验错误不回显输入值（防密钥/PII 经 422 回显泄漏）
+    app.add_exception_handler(RequestValidationError, request_validation_handler)
 
     # 注册API路由
     for router in api_routers:

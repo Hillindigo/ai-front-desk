@@ -302,3 +302,57 @@ def test_dev_cookie_secure_follows_env(monkeypatch):
     assert _secure_cookie() is False
     monkeypatch.setattr(_s, "cookie_secure", True)
     assert _secure_cookie() is True
+
+
+# --- I1-E4：错误脱敏 ---------------------------------------------------------
+
+def test_redact_masks_api_key_bearer_and_token():
+    from api.core.redact import redact
+
+    assert redact("sk-abc123def456ghi789jkl") == "<REDACTED>"
+    bearer = redact("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9eyJzdWIiOiIxMjM0NTY3ODkwIn0")
+    assert "eyJhbG" not in bearer
+    assert "<REDACTED>" in bearer
+    assert "REDACTED" in redact("api_key=supersecretvalue123")
+    assert redact("普通业务文案 没有敏感信息") == "普通业务文案 没有敏感信息"
+
+
+def test_validation_error_does_not_echo_input():
+    from starlette.testclient import TestClient
+    from app import app as fastapi_app
+
+    client = TestClient(fastapi_app)
+    # user_id 应为字符串，传 int 触发 RequestValidationError；
+    # 同时在 message 放一个疑似密钥，确认校验错误不回显输入值。
+    r = client.post("/api/v1/conversations", json={
+        "user_id": 12345, "message": "sk-secret-leak-abcdef123456",
+    })
+    assert r.status_code == 422
+    body = r.text
+    assert "secret-leak" not in body
+    assert "12345" not in body
+    assert r.json()["detail"]["code"] == "INVALID_INPUT"
+
+
+async def test_general_handler_returns_generic_body():
+    from starlette.requests import Request
+    from api.core.exceptions import general_exception_handler
+
+    scope = {"type": "http", "method": "GET", "path": "/boom",
+             "headers": [], "client": ("1.2.3.4", 1), "query_string": b""}
+    req = _make_request(scope)
+    resp = await general_exception_handler(
+        req, RuntimeError("boom sk-asecretkeyvalue999 path=/var/data/db.sqlite")
+    )
+    assert resp.status_code == 500
+    body = resp.body.decode()
+    # 不向客户端返回异常详情/密钥/路径
+    assert "boom" not in body
+    assert "secret" not in body
+    assert "/var/data" not in body
+    assert "服务器内部错误" in body
+
+
+def _make_request(scope):
+    from starlette.requests import Request
+    return Request(scope)
