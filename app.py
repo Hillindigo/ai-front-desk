@@ -75,6 +75,11 @@ async def initialize_system(app: Optional[FastAPI] = None):
 def create_app() -> FastAPI:
     """创建FastAPI应用实例"""
     
+    # Phase I I1-E1：生产配置门禁（D12）——生产模式配置无效即拒启，
+    # 不进入"降级启动"。开发/测试默认 APP_ENV=development，不启用门禁。
+    if settings.is_production():
+        settings.validate_production()
+
     app = FastAPI(
         title="AI Front Desk — 线下服务门店智能运营 Agent",
         description="提供门店咨询、预约管理、排班协同、知识检索和客户行为分析能力的 API 服务",
