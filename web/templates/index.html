@@ -457,280 +457,316 @@
         </div>
     </div>
     <script>
-    const chatBox = document.getElementById('chat-box');
-    const chatForm = document.getElementById('chat-form');
-    const userInput = document.getElementById('user-input');
-    const clearBtn = document.getElementById('clear-btn');
-    const typingIndicator = document.getElementById('typing-indicator');
-    let lastBotBubble = null;
+const chatBox = document.getElementById('chat-box');
+const chatForm = document.getElementById('chat-form');
+const userInput = document.getElementById('user-input');
+const clearBtn = document.getElementById('clear-btn');
+const typingIndicator = document.getElementById('typing-indicator');
+let lastBotBubble = null;
 
-    // === Phase B：会话管理（localStorage 保存 conversation_id）===
-    let conversationId = localStorage.getItem('conversation_id');
+// === Phase H H1：会话管理（标签页隔离 + 服务端恢复）===
+// sessionStorage 持有"当前标签页会话"，多个标签页互不串线；
+// localStorage 只作跨刷新/跨标签页的导航提示，不作为权限或业务事实来源。
+const TAB_KEY = 'chat_tab_session';
+const LS_RECENT = 'recent_conversation_id';
+let conversationId = sessionStorage.getItem(TAB_KEY) || null;
 
-    async function ensureConversation() {
-        if (!conversationId) {
-            try {
-                const res = await fetch('/api/v1/conversations', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: 'default_user', channel: 'web'})
-                });
-                if (!res.ok) throw new Error('创建会话失败: ' + res.status);
-                const data = await res.json();
-                conversationId = data.conversation_id;
-                localStorage.setItem('conversation_id', conversationId);
-            } catch (e) {
-                console.error('创建会话失败:', e);
-            }
-        }
-        return conversationId;
+// 当前待发送/待重试的状态
+let pending = null;            // {text} 失败待重试
+let connectionStatus = 'idle'; // 'idle' | 'sending'
+
+function persistConversation(id) {
+    conversationId = id;
+    sessionStorage.setItem(TAB_KEY, id);
+    localStorage.setItem(LS_RECENT, id); // 仅导航提示
+}
+
+async function ensureConversation() {
+    if (!conversationId) {
+        const res = await fetch('/api/v1/conversations', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: 'default_user', channel: 'web'})
+        });
+        if (!res.ok) throw new Error('创建会话失败: ' + res.status);
+        const data = await res.json();
+        persistConversation(data.conversation_id);
     }
+    return conversationId;
+}
 
-    async function newConversation() {
-        // 新建会话：创建新 ID（不只是清空浏览器文本）
-        conversationId = null;
-        localStorage.removeItem('conversation_id');
-        await ensureConversation();
-        // 清空聊天区，保留欢迎消息
-        const welcomeMessage = chatBox.querySelector('.message.bot').cloneNode(true);
-        chatBox.innerHTML = '';
-        chatBox.appendChild(welcomeMessage);
-        lastBotBubble = null;
-        userInput.focus();
+async function newConversation() {
+    // 新建会话：创建新标签页会话 ID（原会话保留在服务端，不清除）
+    conversationId = null;
+    sessionStorage.removeItem(TAB_KEY);
+    await ensureConversation();
+    const welcome = chatBox.querySelector('.message.bot').cloneNode(true);
+    chatBox.innerHTML = '';
+    chatBox.appendChild(welcome);
+    lastBotBubble = null;
+    userInput.focus();
+}
+
+function addMessage(text, sender) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message ' + sender;
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.innerHTML = sender === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = text.replace(/\n/g, '<br>');
+    msgDiv.appendChild(avatar);
+    msgDiv.appendChild(bubble);
+    chatBox.appendChild(msgDiv);
+    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
+    if (sender === 'bot') lastBotBubble = bubble;
+}
+
+function showTypingIndicator() {
+    typingIndicator.style.display = 'block';
+    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
+}
+function hideTypingIndicator() {
+    typingIndicator.style.display = 'none';
+}
+
+function updateLastBotMessage(text) {
+    if (!lastBotBubble) return;
+    const reply = document.createElement('div');
+    const normalized = text || '';
+    if (normalized.indexOf('预约成功') >= 0 || normalized.indexOf('已为您预约') >= 0) {
+        reply.className = 'bot-success';
+        reply.textContent = '✅ ' + normalized;
+    } else if (normalized.indexOf('抱歉') >= 0 || normalized.indexOf('失败') >= 0 || normalized.indexOf('不空闲') >= 0) {
+        reply.className = 'bot-error';
+        reply.textContent = '❌ ' + normalized;
+    } else if (normalized.indexOf('请问') >= 0 || normalized.indexOf('需要') >= 0) {
+        reply.className = 'bot-info';
+        reply.textContent = '💬 ' + normalized;
+    } else {
+        reply.className = 'bot-reply';
+        reply.textContent = normalized;
     }
+    lastBotBubble.replaceChildren(reply);
+    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
+}
 
-    function addMessage(text, sender) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'message ' + sender;
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'avatar';
-        if (sender === 'user') {
-            avatar.innerHTML = '<i class="fas fa-user"></i>';
+function markLastBotMessage(markerClass) {
+    if (!lastBotBubble) return;
+    const reply = lastBotBubble.querySelector('div:last-child') || lastBotBubble;
+    if (reply && !reply.classList.contains(markerClass)) reply.classList.add(markerClass);
+}
+
+// F6：渲染最近一条回答的来源卡片/无依据提示（从服务端读取，不伪造）
+async function loadTurnSources(convId) {
+    if (!lastBotBubble) return;
+    try {
+        const res = await fetch('/api/v1/conversations/' + convId + '/sources');
+        if (!res.ok) return;
+        const data = await res.json();
+        const msgEl = lastBotBubble.closest('.message');
+        if (!msgEl) return;
+        const old = msgEl.querySelector('.answer-sources');
+        if (old) old.remove();
+        let html;
+        if (data.has_evidence) {
+            const ev = data.evidence || [];
+            html = '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;font-size:12px;color:#374151;">' +
+                '<div style="font-weight:600;color:#15803d;">📚 回答依据（' + ev.length + '）</div>' +
+                (ev.map(function (e, i) {
+                    return '<div style="margin-top:4px;">来源' + (i + 1) + '·' + (e.category || '门店知识') + '：' + (e.snippet || '').slice(0, 80) + '</div>';
+                }).join('')) +
+                '</div>';
         } else {
-            avatar.innerHTML = '<i class="fas fa-robot"></i>';
+            html = '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:#78350f;">' +
+                '⚠️ 当前无足够可靠的门店依据，以上仅为参考，请以门店现场/工作人员信息为准。</div>';
         }
-        
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble';
-        bubble.innerHTML = text.replace(/\n/g, '<br>');
-        
-        msgDiv.appendChild(avatar);
-        msgDiv.appendChild(bubble);
-        chatBox.appendChild(msgDiv);
-        
-        // 平滑滚动到底部
-        requestAnimationFrame(() => {
-            chatBox.scrollTo({
-                top: chatBox.scrollHeight,
-                behavior: 'smooth'
-            });
+        msgEl.insertAdjacentHTML('beforeend', html);
+    } catch (e) { /* 来源加载失败不阻断对话 */ }
+}
+
+// 解析 SSE：按空行切块，事件名 + JSON data
+async function parseSSE(reader, onEvent) {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream: true});
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+            const block = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            let eventName = 'message';
+            let dataStr = '';
+            for (const line of block.split('\n')) {
+                if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+                else if (line.startsWith('data: ')) dataStr += line.slice(6);
+            }
+            if (dataStr) {
+                try { onEvent(eventName, JSON.parse(dataStr)); } catch (e) { /* 忽略坏包 */ }
+            }
+        }
+    }
+}
+
+// === H1：会话状态与错误恢复 ===
+// 在最后一条 bot 泡泡内追加错误 + 重试按钮（不污染布局）
+function renderError(message) {
+    if (!lastBotBubble) return;
+    hideTypingIndicator();
+    if (lastBotBubble.dataset.err) return; // 已显示过错误
+    const err = document.createElement('div');
+    err.className = 'bot-error';
+    err.style.marginTop = '8px';
+    err.textContent = '⚠️ ' + message;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'retry-btn';
+    retry.textContent = '重试';
+    retry.style.cssText = 'margin-top:8px;padding:4px 12px;cursor:pointer;border:1px solid #ddd;border-radius:6px;background:#fff;color:#333;';
+    retry.onclick = function () { clearBubbleError(); doSend(); };
+    lastBotBubble.appendChild(err);
+    lastBotBubble.appendChild(retry);
+    lastBotBubble.dataset.err = '1';
+}
+
+function clearBubbleError() {
+    if (!lastBotBubble) return;
+    if (lastBotBubble.dataset.err) {
+        lastBotBubble.querySelectorAll('.bot-error,.retry-btn').forEach(function (n) { n.remove(); });
+        delete lastBotBubble.dataset.err;
+    }
+}
+
+// 单轮发送：复用 lastBotBubble 渲染 bot 输出；返回 'ok' 或 'error:消息'
+async function runTurn(text) {
+    const sendTurn = function () {
+        return fetch('/api/v1/conversations/' + conversationId + '/turns', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: text, user_id: 'default_user'})
         });
-        
-        if (sender === 'bot') lastBotBubble = bubble;
+    };
+    await ensureConversation();
+    let res = await sendTurn();
+    // 会话不存在（404）：重新建会话并重发一次（演示场景允许）
+    if (res.status === 404) {
+        conversationId = null;
+        sessionStorage.removeItem(TAB_KEY);
+        await ensureConversation();
+        res = await sendTurn();
     }
-
-    function showTypingIndicator() {
-        typingIndicator.style.display = 'block';
-        requestAnimationFrame(() => {
-            chatBox.scrollTo({
-                top: chatBox.scrollHeight,
-                behavior: 'smooth'
-            });
-        });
-    }
-
-    function hideTypingIndicator() {
-        typingIndicator.style.display = 'none';
-    }
-
-    function updateLastBotMessage(text) {
-        if (lastBotBubble) {
-            // Phase D：SSE 已提供纯用户可见文本，不再解析旧 [THOUGHT]/[REPLY] 标记。
-            const reply = document.createElement('div');
-            const normalized = text || '';
-            if (normalized.includes('预约成功') || normalized.includes('已为您预约')) {
-                reply.className = 'bot-success';
-                reply.textContent = `✅ ${normalized}`;
-            } else if (normalized.includes('抱歉') || normalized.includes('失败') || normalized.includes('不空闲')) {
-                reply.className = 'bot-error';
-                reply.textContent = `❌ ${normalized}`;
-            } else if (normalized.includes('请问') || normalized.includes('需要')) {
-                reply.className = 'bot-info';
-                reply.textContent = `💬 ${normalized}`;
-            } else {
-                reply.className = 'bot-reply';
-                reply.textContent = normalized;
-            }
-            lastBotBubble.replaceChildren(reply);
-            
-            // 内容更新后自动滚动
-            requestAnimationFrame(() => {
-                chatBox.scrollTo({
-                    top: chatBox.scrollHeight,
-                    behavior: 'smooth'
-                });
-            });
-        }
-    }
-
-    // Phase E E7：记忆操作反馈可视化标记（"已记住"/"已删除"/"无法保存"）
-    function markLastBotMessage(markerClass) {
-        if (!lastBotBubble) return;
-        const reply = lastBotBubble.querySelector('div:last-child') || lastBotBubble;
-        if (reply && !reply.classList.contains(markerClass)) {
-            reply.classList.add(markerClass);
-        }
-    }
-
-    // F6：渲染最近一条回答的"来源卡片"或"无依据提示"（从服务端读取，不伪造来源）
-    async function loadTurnSources(convId) {
-        if (!lastBotBubble) return;
-        try {
-            const res = await fetch(`/api/v1/conversations/${convId}/sources`);
-            if (!res.ok) return;
-            const data = await res.json();
-            const msgEl = lastBotBubble.closest('.message');
-            if (!msgEl) return;
-            // 移除旧的来源区块
-            const old = msgEl.querySelector('.answer-sources');
-            if (old) old.remove();
-            let html;
-            if (data.has_evidence) {
-                const ev = data.evidence || [];
-                html = `<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;font-size:12px;color:#374151;">
-                    <div style="font-weight:600;color:#15803d;">📚 回答依据（${ev.length}）</div>
-                    ${ev.map((e,i)=>`<div style="margin-top:4px;">来源${i+1}·${e.category||'门店知识'}：${(e.snippet||'').slice(0,80)}</div>`).join('')}
-                    </div>`;
-            } else {
-                html = `<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:#78350f;">
-                    ⚠️ 当前无足够可靠的门店依据，以上仅为参考，请以门店现场/工作人员信息为准。
-                    </div>`;
-            }
-            msgEl.insertAdjacentHTML('beforeend', html);
-        } catch (e) { /* 来源加载失败不阻断对话 */ }
-    }
-
-    chatForm.onsubmit = async function(e) {
-        e.preventDefault();
-        const text = userInput.value.trim();
-        if (!text) return;
-        
-        // 禁用发送按钮
-        const sendBtn = document.getElementById('send-btn');
-        sendBtn.disabled = true;
-        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 发送中...';
-        
-        addMessage(text, 'user');
-        userInput.value = '';
-        
-        // 显示打字指示器
-        showTypingIndicator();
-        
-        // 添加空的机器人消息
-        addMessage('', 'bot');
-        lastBotBubble = chatBox.querySelector('.message.bot:last-child .bubble');
-        
-        // Phase D：SSE 事件流解析（turns 规范入口）
-        async function sendTurn(convId) {
-            return await fetch(`/api/v1/conversations/${convId}/turns`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: text, user_id: 'default_user'})
-            });
-        }
-        
-        // 解析 SSE 事件流：按空行切块，事件名 + JSON data
-        async function parseSSE(reader, onEvent) {
-            const decoder = new TextDecoder();
-            let buffer = '';
-            while (true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, {stream: true});
-                let idx;
-                while ((idx = buffer.indexOf('\n\n')) >= 0) {
-                    const block = buffer.slice(0, idx);
-                    buffer = buffer.slice(idx + 2);
-                    let eventName = 'message';
-                    let dataStr = '';
-                    for (const line of block.split('\n')) {
-                        if (line.startsWith('event: ')) eventName = line.slice(7).trim();
-                        else if (line.startsWith('data: ')) dataStr += line.slice(6);
-                    }
-                    if (dataStr) {
-                        try { onEvent(eventName, JSON.parse(dataStr)); } catch (e) { /* 忽略坏包 */ }
-                    }
-                }
-            }
-        }
-        
-        try {
-            await ensureConversation();
-            let res = await sendTurn(conversationId);
-            
-            // 会话不存在/失效：重建会话并重发一次
-            if (res.status === 404 || res.status === 403) {
-                conversationId = null;
-                localStorage.removeItem('conversation_id');
-                await ensureConversation();
-                res = await sendTurn(conversationId);
-            }
-            
-            if (!res.ok || !res.body) {
-                throw new Error('聊天请求失败: ' + res.status);
-            }
-            
-            hideTypingIndicator();
-            
-            let botMsg = '';
-            await parseSSE(res.body.getReader(), (eventName, data) => {
-                if (eventName === 'assistant_delta' && data.text) {
-                    botMsg += data.text;
-                    updateLastBotMessage(botMsg);
-                    // Phase E E7：记忆操作反馈可视化（"已记住"/"无法保存"等）
-                    if (/我已记住|这条偏好|已删除|无法保存/.test(data.text)) {
-                        markLastBotMessage('memory-feedback');
-                    }
-                } else if (eventName === 'run_failed') {
-                    // 稳定错误展示（事件流内失败）
-                    botMsg += '\n[错误] ' + (data.message || '处理失败，请稍后再试');
-                    updateLastBotMessage(botMsg);
-                } else if (eventName === 'run_completed') {
-                    // 本轮完成：渲染回答依据/无依据提示（从服务端读取，不伪造来源）
-                    loadTurnSources(conversationId);
-                }
-            });
+    // 归属/权限不符（403）：不静默重建掩盖错误
+    if (res.status === 403) return 'error:会话归属校验失败，请新建会话';
+    if (res.status === 422) return 'error:输入无效，请检查消息内容';
+    if (!res.ok || !res.body) return 'error:服务暂时不可用（' + res.status + '）';
+    hideTypingIndicator();
+    let botMsg = '';
+    let failed = false;
+    let failMsg = '';
+    await parseSSE(res.body.getReader(), function (eventName, data) {
+        if (eventName === 'assistant_delta' && data.text) {
+            botMsg += data.text;
             updateLastBotMessage(botMsg);
-        } catch (error) {
-            hideTypingIndicator();
-            lastBotBubble.innerHTML = '抱歉，服务暂时不可用，请稍后再试。';
-            console.error('Chat error:', error);
-        } finally {
-            // 恢复发送按钮
-            sendBtn.disabled = false;
-            sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
-            userInput.focus();
+            if (/我已记住|这条偏好|已删除|无法保存/.test(data.text)) markLastBotMessage('memory-feedback');
+        } else if (eventName === 'run_failed') {
+            // 稳定错误展示（事件流内失败），不渲染内部异常细节
+            failed = true;
+            failMsg = data.message || '处理失败，请稍后再试';
+            updateLastBotMessage(botMsg + '\n' + failMsg);
+        } else if (eventName === 'run_completed') {
+            loadTurnSources(conversationId);
         }
-    }
+    });
+    if (failed) return 'error:' + failMsg;
+    updateLastBotMessage(botMsg);
+    return 'ok';
+}
 
-    clearBtn.onclick = function() {
-        // Phase B：新建会话（创建新 conversation_id + 清空当前对话）
-        newConversation();
-    }
-    
-    // 添加回车键发送功能
-    userInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            chatForm.dispatchEvent(new Event('submit'));
+// 发送管道：新消息或重试共用
+async function doSend() {
+    if (!pending || connectionStatus === 'sending') return;
+    const text = pending.text;
+    clearBubbleError();
+    connectionStatus = 'sending';
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 发送中...';
+    showTypingIndicator();
+    try {
+        const outcome = await runTurn(text);
+        if (outcome !== 'ok' && outcome.indexOf('error:') === 0) {
+            renderError(outcome.slice('error:'.length));
         }
-    });
-    
-    // 页面加载完成后聚焦输入框
-    window.addEventListener('load', function() {
+    } finally {
+        connectionStatus = 'idle';
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
         userInput.focus();
-    });
+    }
+}
+
+chatForm.onsubmit = function (e) {
+    e.preventDefault();
+    const text = userInput.value.trim();
+    if (!text) return;
+    pending = {text};
+    addMessage(text, 'user');
+    userInput.value = '';
+    addMessage('', 'bot');
+    lastBotBubble = chatBox.querySelector('.message.bot:last-child .bubble');
+    doSend();
+};
+
+clearBtn.onclick = function () {
+    newConversation();
+};
+
+userInput.addEventListener('keypress', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.dispatchEvent(new Event('submit'));
+    }
+});
+
+// 刷新恢复：从服务端读取当前会话历史（不把本地缓存当作事实来源）
+async function restoreFromServer() {
+    if (!conversationId) return;
+    try {
+        const res = await fetch('/api/v1/conversations/' + conversationId + '?user_id=default_user');
+        if (res.status === 404) {
+            conversationId = null;
+            sessionStorage.removeItem(TAB_KEY);
+            await ensureConversation();
+            return;
+        }
+        if (res.status === 403) {
+            conversationId = null;
+            sessionStorage.removeItem(TAB_KEY);
+            await ensureConversation();
+            return;
+        }
+        if (!res.ok) return; // 暂无法恢复：保留欢迎，不伪造成功
+        const data = await res.json();
+        const welcome = chatBox.querySelector('.message.bot').cloneNode(true);
+        chatBox.innerHTML = '';
+        chatBox.appendChild(welcome);
+        lastBotBubble = null;
+        const msgs = data.messages || [];
+        for (const m of msgs) {
+            if (m.role === 'user') addMessage(m.content, 'user');
+            else if (m.role === 'assistant' && m.content) addMessage(m.content, 'bot');
+        }
+    } catch (e) { /* 网络错误：保留欢迎，不伪造 */ }
+}
+
+window.addEventListener('load', function () {
+    restoreFromServer();
+    userInput.focus();
+});
+
     </script>
 </body>
 </html>
