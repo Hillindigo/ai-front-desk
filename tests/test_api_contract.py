@@ -58,23 +58,15 @@ def test_task_classify_contract(client):
 # ---------- 知识库 ----------
 
 def test_knowledge_list_contract(client):
-    """知识库列表返回 documents/categories/total_count。"""
+    """知识库旧接口未登录时拒绝访问，避免把商家数据暴露给匿名请求。"""
     resp = client.get("/api/knowledge/")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "documents" in body
-    assert "categories" in body
-    assert "total_count" in body
+    assert resp.status_code == 401
 
 
 def test_knowledge_search_contract(client):
-    """知识搜索返回 status/data/count。"""
+    """知识搜索旧接口未登录时拒绝访问。"""
     resp = client.post("/api/knowledge/search", json={"query": "营业时间"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body.get("status") == "success"
-    assert "data" in body
-    assert "count" in body
+    assert resp.status_code == 401
 
 
 # ---------- 服务人员 ----------

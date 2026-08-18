@@ -73,7 +73,10 @@ def confirm_appointment(
     service: AdminAppointmentService = Depends(get_admin_appointment_service),
 ):
     try:
-        result = service.confirm(_store_id(identity), appointment_id, body.idempotency_key)
+        result = service.confirm(
+            _store_id(identity), appointment_id, body.idempotency_key,
+            actor_id=identity["actor"]["actor_id"],
+        )
     except AppointmentDomainError as exc:
         raise _error(exc)
     if result is None:
@@ -94,6 +97,7 @@ def cancel_appointment(
         result = service.cancel(
             _store_id(identity), appointment_id, body.reason,
             request.headers.get("X-Request-ID"),
+            actor_id=identity["actor"]["actor_id"],
         )
     except AppointmentDomainError as exc:
         raise _error(exc)
@@ -115,6 +119,7 @@ def reschedule_appointment(
         result = service.reschedule(
             _store_id(identity), appointment_id, body.start_time, body.end_time,
             request.headers.get("X-Request-ID"),
+            actor_id=identity["actor"]["actor_id"],
         )
     except AppointmentDomainError as exc:
         raise _error(exc)

@@ -102,7 +102,7 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
                 
             return self._technician_to_dict(technician)
 
-    def get_all_technicians(self) -> List[Dict[str, Any]]:
+    def get_all_technicians(self, store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         获取所有服务人员信息
         
@@ -110,7 +110,10 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
             服务人员信息列表
         """
         with self.session_manager.session_scope() as session:
-            technicians = session.query(Technician).all()
+            query = session.query(Technician)
+            if store_id is not None:
+                query = query.filter(Technician.store_id == store_id)
+            technicians = query.all()
             return [self._technician_to_dict(tech) for tech in technicians]
 
     def get_all_strengths(self) -> List[str]:

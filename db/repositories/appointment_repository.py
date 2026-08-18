@@ -324,6 +324,7 @@ class AppointmentRepository:
         payload: Optional[Dict[str, Any]] = None,
         extra_fields: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,
+        audit_event: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """原子状态迁移 + 事件写入（同事务）。
 
@@ -363,6 +364,24 @@ class AppointmentRepository:
                 payload_json=_event_payload(payload),
             )
             session.add(event)
+            if audit_event:
+                from db.models import AuditEvent
+                import json
+                import uuid
+
+                session.add(AuditEvent(
+                    id=uuid.uuid4().hex,
+                    actor_id=audit_event.get("actor_id"),
+                    store_id=appt.store_id,
+                    action=audit_event["action"],
+                    resource_type="appointment",
+                    resource_id=str(appt.id),
+                    request_id=audit_event.get("request_id") or request_id,
+                    outcome="succeeded",
+                    summary_json=json.dumps(
+                        audit_event.get("summary") or {}, ensure_ascii=False
+                    ),
+                ))
             session.flush()
             session.refresh(appt)
             return _appointment_to_dict(appt)

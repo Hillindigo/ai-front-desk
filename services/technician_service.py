@@ -1,6 +1,6 @@
 # utils/ai/technician_service.py
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from db.db_router import DatabaseRouter
 import logging
 
@@ -101,9 +101,9 @@ class TechnicianService:
             logger.error(f"服务人员初始化失败: {e}")
             return False
 
-    def get_all_technicians(self) -> List[Dict[str, Any]]:
+    def get_all_technicians(self, store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取所有服务人员信息"""
-        return self.db.technicians.get_all_technicians()
+        return self.db.technicians.get_all_technicians(store_id=store_id)
 
     def get_technician_by_name(self, name: str) -> Dict[str, Any]:
         """根据姓名获取服务人员信息"""

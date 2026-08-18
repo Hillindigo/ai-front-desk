@@ -5,19 +5,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from db.base.session_manager import SessionManager
+from db.db_router import DatabaseRouter
 from db.models import Appointment, AppointmentEvent
 from services.appointment_domain import AppointmentCommandService, AppointmentDomainError
 
 
 class AdminAppointmentService:
     def __init__(self, db_path: Optional[str] = None):
-        self.session_manager = SessionManager(db_path)
-        self.commands = AppointmentCommandService()
+        self._router = DatabaseRouter(db_path)
+        self.session_manager = self._router.session_manager
+        self.commands = AppointmentCommandService(self._router)
 
     def close(self) -> None:
         self.commands.close()
-        self.session_manager.close()
 
     def list(self, store_id: int, status: Optional[str] = None, limit: int = 100):
         with self.session_manager.session_scope() as session:
@@ -46,24 +46,29 @@ class AdminAppointmentService:
             ]
             return result
 
-    def cancel(self, store_id, appointment_id, reason, request_id):
+    def cancel(self, store_id, appointment_id, reason, request_id, actor_id=None):
         row = self.get(store_id, appointment_id)
         if row is None:
             return None
-        return self.commands.cancel(appointment_id, row["user_id"], reason, request_id)
+        return self.commands.cancel(
+            appointment_id, row["user_id"], reason, request_id, actor_id=actor_id
+        )
 
-    def confirm(self, store_id, appointment_id, idempotency_key):
+    def confirm(self, store_id, appointment_id, idempotency_key, actor_id=None):
         row = self.get(store_id, appointment_id)
         if row is None:
             return None
-        return self.commands.confirm(appointment_id, row["user_id"], idempotency_key)
+        return self.commands.confirm(
+            appointment_id, row["user_id"], idempotency_key, actor_id=actor_id
+        )
 
-    def reschedule(self, store_id, appointment_id, start_time, end_time, request_id):
+    def reschedule(self, store_id, appointment_id, start_time, end_time, request_id, actor_id=None):
         row = self.get(store_id, appointment_id)
         if row is None:
             return None
         return self.commands.reschedule(
-            appointment_id, row["user_id"], start_time, end_time, request_id
+            appointment_id, row["user_id"], start_time, end_time, request_id,
+            actor_id=actor_id,
         )
 
     @staticmethod

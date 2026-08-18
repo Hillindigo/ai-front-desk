@@ -8,11 +8,12 @@
 """
 
 import uuid
+import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 from db.db_router import DatabaseRouter
-from db.models import Appointment, AppointmentEvent, TechnicianSchedule
+from db.models import Appointment, AppointmentEvent, AuditEvent, TechnicianSchedule
 from db.repositories.appointment_repository import (
     ActiveDraftOwnershipError,
     _appointment_to_dict,
@@ -161,6 +162,7 @@ class AppointmentCommandService:
     def confirm(
         self, appointment_id: str, user_id: str,
         idempotency_key: Optional[str] = None,
+        actor_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """pending_confirmation -> confirmed：BEGIN IMMEDIATE 事务内冲突检查+迁移+事件。
 
@@ -230,6 +232,18 @@ class AppointmentCommandService:
                     request_id=idempotency_key,
                 )
             )
+            if actor_id is not None:
+                session.add(AuditEvent(
+                    id=uuid.uuid4().hex,
+                    actor_id=actor_id,
+                    store_id=row.store_id,
+                    action="appointment.confirmed",
+                    resource_type="appointment",
+                    resource_id=str(row.id),
+                    request_id=idempotency_key,
+                    outcome="succeeded",
+                    summary_json=json.dumps({"status": row.status}, ensure_ascii=False),
+                ))
             session.flush()
             session.refresh(row)
             return _appointment_to_dict(row)
@@ -241,6 +255,7 @@ class AppointmentCommandService:
     def cancel(
         self, appointment_id: str, user_id: str,
         reason: Optional[str] = None, request_id: Optional[str] = None,
+        actor_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """任意非终态 -> cancelled（重复取消幂等返回当前状态）。"""
         appt = self._get_owned(appointment_id, user_id)
@@ -256,6 +271,12 @@ class AppointmentCommandService:
             request_id=request_id,
             payload={"reason": reason} if reason else None,
             extra_fields={"cancel_reason": reason} if reason else None,
+            audit_event={
+                "actor_id": actor_id,
+                "action": "appointment.cancelled",
+                "request_id": request_id,
+                "summary": {"reason": reason} if reason else {},
+            } if actor_id is not None else None,
         )
         return result
 
@@ -265,6 +286,7 @@ class AppointmentCommandService:
         self, appointment_id: str, user_id: str,
         new_start_time: datetime, new_end_time: datetime,
         request_id: Optional[str] = None,
+        actor_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """confirmed -> confirmed（改约）：新时间校验 + 事务内冲突检查（排除自身）。"""
         appt = self._get_owned(appointment_id, user_id)
@@ -317,6 +339,21 @@ class AppointmentCommandService:
                     payload_json=f'{{"new_start": "{new_start_time.isoformat()}", "new_end": "{new_end_time.isoformat()}"}}',
                 )
             )
+            if actor_id is not None:
+                session.add(AuditEvent(
+                    id=uuid.uuid4().hex,
+                    actor_id=actor_id,
+                    store_id=row.store_id,
+                    action="appointment.rescheduled",
+                    resource_type="appointment",
+                    resource_id=str(row.id),
+                    request_id=request_id,
+                    outcome="succeeded",
+                    summary_json=json.dumps({
+                        "new_start": new_start_time.isoformat(),
+                        "new_end": new_end_time.isoformat(),
+                    }, ensure_ascii=False),
+                ))
             session.flush()
             session.refresh(row)
             return _appointment_to_dict(row)

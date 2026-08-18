@@ -72,6 +72,16 @@ class TestAdminAppointments:
         detail = client.get(f"/api/v1/admin/appointments/{appointment['id']}")
         assert detail.json()["events"][-1]["event_type"] == "cancelled"
 
+        audit = client.get(
+            "/api/v1/admin/audit", params={"action": "appointment.cancelled"}
+        )
+        assert audit.status_code == 200, audit.text
+        event = audit.json()["items"][0]
+        assert event["actor_id"] == account["actor_id"]
+        assert event["store_id"] == account["store_id"]
+        assert event["resource_id"] == appointment["id"]
+        assert event["outcome"] == "succeeded"
+
     def test_错误门店预约返回404(self, client, auth_service):
         account, _ = setup(client, auth_service)
         other = auth_service.create_store("G5另一门店")
