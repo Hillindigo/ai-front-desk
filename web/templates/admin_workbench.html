@@ -52,7 +52,7 @@
 <div class="wrap">
   <div class="panel list-panel">
     <h2>会话列表</h2>
-    <div class="filters" id="filters">
+    <div class="filters" id="filters" role="group" aria-label="会话状态筛选">
       <button data-f="all" class="on">全部</button>
       <button data-f="awaiting_human">待人工</button>
       <button data-f="human_active">接管中</button>
@@ -149,7 +149,8 @@ function openDetail(cid) {
     if (mode !== 'human_active') html += '<button class="action primary" data-op="takeover">接管</button>';
     if (mode === 'human_active') html += '<button class="action" data-op="resume">恢复 AI</button>';
     html += '<button class="action" data-op="note">加备注</button></div>';
-    html += '<div style="margin-top:12px;"><textarea id="reply-input" rows="2" placeholder="人工回复内容..."></textarea>' +
+    html += '<div style="margin-top:12px;"><label for="reply-input" style="font-weight:600;font-size:12px;">人工回复内容</label>' +
+      '<textarea id="reply-input" rows="2" placeholder="人工回复内容..."></textarea>' +
       '<div class="ops"><button class="action primary" data-op="reply">发送人工回复</button></div></div>';
     html += '<div id="op-msg"></div>';
     var detail = document.getElementById('detail');
