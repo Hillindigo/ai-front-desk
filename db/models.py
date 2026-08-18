@@ -460,6 +460,27 @@ class UserPreference(Base):
     confidence_score = Column(Integer, default=1)  # 偏好的置信度（出现次数）
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class PrivacyDeletionRegistry(Base):
+    """Phase I I2/D10：客户数据删除/匿名化登记。
+
+    记录一次删除请求的主体范围与幂等键，供"从旧备份恢复后重放删除"防止 PII 复活。
+    只保存不可逆标识（request_id）、门店、客户 user_id 与实体计数，不含原始 PII。
+    """
+
+    __tablename__ = "privacy_deletion_registry"
+    __table_args__ = (
+        Index("uq_privacy_deletion_request", "request_id", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, nullable=False, index=True)
+    customer_user_id = Column(String(64), nullable=False, index=True)
+    request_id = Column(String(64), nullable=False)
+    entity_counts_json = Column(Text, nullable=True)
+    actor_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class UserRecommendation(Base):
     __tablename__ = 'user_recommendations'
     id = Column(Integer, primary_key=True)

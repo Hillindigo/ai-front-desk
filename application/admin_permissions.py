@@ -15,6 +15,7 @@ ADMIN_PERMISSIONS = frozenset(
         "manage_members",
         "read_members",
         "read_audit",
+        "manage_customer_data",  # Phase I I2：客户数据导出/删除/匿名化（仅 owner/manager）
     }
 )
 
@@ -31,6 +32,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             "read_customer_preferences",
             "read_members",
             "read_audit",
+            "manage_customer_data",
         }
     ),
     "operator": frozenset(

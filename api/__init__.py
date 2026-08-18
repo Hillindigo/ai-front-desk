@@ -31,6 +31,7 @@ from .admin_conversations import router as admin_conversations_router
 from .admin_appointments import router as admin_appointments_router
 from .admin_customers import router as admin_customers_router
 from .admin_audit import router as admin_audit_router
+from .admin_privacy import router as admin_privacy_router
 
 # 创建API路由列表（用于注册到FastAPI应用）
 api_routers = [
@@ -51,4 +52,5 @@ api_routers = [
     admin_appointments_router,
     admin_customers_router,
     admin_audit_router,
+    admin_privacy_router,
 ]
