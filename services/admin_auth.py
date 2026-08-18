@@ -14,7 +14,7 @@ from sqlalchemy import delete
 
 from application.admin_permissions import ROLE_PERMISSIONS
 from db.base.session_manager import SessionManager
-from db.models import AdminSession, MerchantAccount, Store, StoreMembership
+from db.models import AdminSession, AuditEvent, MerchantAccount, Store, StoreMembership
 
 
 SESSION_COOKIE_NAME = "admin_session"
@@ -92,6 +92,7 @@ class AdminAuthService:
         """仅供测试清理 G1 表，不作为生产 API。"""
         with self.session_manager.session_scope() as session:
             session.execute(delete(AdminSession))
+            session.execute(delete(AuditEvent))
             session.execute(delete(StoreMembership))
             session.execute(delete(MerchantAccount))
 

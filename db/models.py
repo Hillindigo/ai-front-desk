@@ -208,6 +208,91 @@ class Store(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class StoreProfile(Base):
+    """门店运营资料（G3）。"""
+
+    __tablename__ = "store_profiles"
+    __table_args__ = (Index("uq_store_profiles_store", "store_id", unique=True),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    address = Column(String(256), nullable=True)
+    phone = Column(String(64), nullable=True)
+    is_open = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ServiceCatalogItem(Base):
+    """门店可预约服务目录；金额使用分，避免浮点误差。"""
+
+    __tablename__ = "service_catalog_items"
+    __table_args__ = (
+        Index("uq_service_catalog_store_name", "store_id", "name", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    name = Column(String(128), nullable=False)
+    price_cents = Column(Integer, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    description = Column(String(512), nullable=True)
+    is_bookable = Column(Integer, nullable=False, default=1)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StoreBusinessHours(Base):
+    """门店每周营业时间；weekday 使用 0=周一至 6=周日。"""
+
+    __tablename__ = "store_business_hours"
+    __table_args__ = (
+        Index("uq_store_business_hours_day", "store_id", "weekday", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    weekday = Column(Integer, nullable=False)
+    open_time = Column(String(5), nullable=True)
+    close_time = Column(String(5), nullable=True)
+    is_closed = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StoreAppointmentPolicy(Base):
+    """门店预约政策。"""
+
+    __tablename__ = "store_appointment_policies"
+    __table_args__ = (Index("uq_store_appointment_policies_store", "store_id", unique=True),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    min_notice_minutes = Column(Integer, nullable=False, default=120)
+    cancel_window_minutes = Column(Integer, nullable=False, default=120)
+    late_rule = Column(String(256), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AuditEvent(Base):
+    """商家关键操作审计事件。"""
+
+    __tablename__ = "audit_events"
+
+    id = Column(String(64), primary_key=True)
+    actor_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    action = Column(String(128), nullable=False, index=True)
+    resource_type = Column(String(64), nullable=False)
+    resource_id = Column(String(128), nullable=True)
+    request_id = Column(String(128), nullable=True, index=True)
+    outcome = Column(String(32), nullable=False)
+    summary_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class StoreMembership(Base):
     """商家账号到门店的角色关系。"""
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, 
 from pydantic import BaseModel, Field
 
 from services.admin_auth import AdminAuthService, SESSION_COOKIE_NAME
+from application.admin_permissions import has_permission
 
 router = APIRouter(prefix="/api/v1/admin/auth", tags=["商家认证"])
 
@@ -54,6 +55,14 @@ def require_csrf(
     if not service.verify_csrf(_current_token(request), csrf_token):
         raise _error(403, "CSRF_INVALID", "缺少或无效的 CSRF token")
     return identity
+
+
+def require_permission(permission: str):
+    def dependency(identity=Depends(get_current_admin)):
+        if not has_permission(identity.get("role"), permission):
+            raise _error(403, "PERMISSION_DENIED", "当前角色无权执行该操作")
+        return identity
+    return dependency
 
 
 def _public_identity(identity: dict) -> dict:

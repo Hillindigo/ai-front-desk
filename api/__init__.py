@@ -26,6 +26,7 @@ from .appointments import router as appointments_router
 from .preferences import router as preferences_router
 from .knowledge_v1 import router as knowledge_v1_router
 from .admin_auth import router as admin_auth_router
+from .admin_config import router as admin_config_router
 
 # 创建API路由列表（用于注册到FastAPI应用）
 api_routers = [
@@ -41,4 +42,5 @@ api_routers = [
     preferences_router,
     knowledge_v1_router,
     admin_auth_router,
+    admin_config_router,
 ]
