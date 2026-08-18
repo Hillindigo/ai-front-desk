@@ -24,6 +24,7 @@ def _preference_to_dict(row: Preference) -> Dict[str, Any]:
     return {
         "preference_id": row.id,
         "user_id": row.user_id,
+        "store_id": row.store_id,
         "preference_type": row.preference_type,
         "preference_value": row.preference_value,
         "source": row.source,
@@ -58,18 +59,22 @@ class PreferenceRepository:
 
     # ---------------- 读取 ----------------
 
-    def get_active_preference(self, user_id: str, preference_type: str) -> Optional[Dict[str, Any]]:
+    def get_active_preference(
+        self,
+        user_id: str,
+        preference_type: str,
+        store_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         with self.session_manager.session_scope() as session:
-            row = (
-                session.query(Preference)
-                .filter(
-                    Preference.user_id == user_id,
-                    Preference.preference_type == preference_type,
-                    Preference.is_active == 1,
-                    Preference.deleted_at.is_(None),
-                )
-                .first()
+            query = session.query(Preference).filter(
+                Preference.user_id == user_id,
+                Preference.preference_type == preference_type,
+                Preference.is_active == 1,
+                Preference.deleted_at.is_(None),
             )
+            if store_id is not None:
+                query = query.filter(Preference.store_id == store_id)
+            row = query.first()
             return _preference_to_dict(row) if row else None
 
     def get_active_preferences(self, user_id: str) -> List[Dict[str, Any]]:
@@ -119,6 +124,7 @@ class PreferenceRepository:
         source_appointment_id: Optional[str] = None,
         confidence: int = 100,
         last_confirmed_at: Optional[datetime] = None,
+        store_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """原子覆盖：同一 user_id+preference_type 的旧 active 值停用并写入新值。
 
@@ -127,15 +133,19 @@ class PreferenceRepository:
         now = last_confirmed_at or datetime.utcnow()
         with self.session_manager.session_scope() as session:
             # 停用旧 active（覆盖语义）
-            session.query(Preference).filter(
+            query = session.query(Preference).filter(
                 Preference.user_id == user_id,
                 Preference.preference_type == preference_type,
                 Preference.is_active == 1,
                 Preference.deleted_at.is_(None),
-            ).update({"is_active": 0}, synchronize_session=False)
+            )
+            if store_id is not None:
+                query = query.filter(Preference.store_id == store_id)
+            query.update({"is_active": 0}, synchronize_session=False)
 
             row = Preference(
                 user_id=user_id,
+                store_id=store_id,
                 preference_type=preference_type,
                 preference_value=preference_value,
                 source=source,

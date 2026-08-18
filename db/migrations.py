@@ -89,3 +89,50 @@ def _backfill_status(conn) -> None:
     conn.execute(text(
         "UPDATE knowledge_documents SET status='draft' WHERE status IS NULL"
     ))
+
+
+# Phase G G2：单门店历史数据回填到默认门店
+_STORE_SCOPED_TABLES = (
+    "conversations",
+    "appointments",
+    "knowledge_documents",
+    "knowledge_meta",
+    "technicians",
+    "user_behaviors",
+    "preferences",
+    "preference_tombstones",
+)
+
+
+def apply_store_migrations(engine) -> int:
+    """为已有业务表补 store_id，并把历史单门店数据回填到默认门店。
+
+    新增列保持可空以兼容旧 SQLite；应用层在 G2 收敛后禁止创建无门店范围的新业务数据。
+    返回默认门店 ID。函数幂等，可安全重复执行。
+    """
+    with engine.begin() as conn:
+        stores = conn.execute(text("SELECT id FROM stores ORDER BY id LIMIT 1")).fetchone()
+        if stores is None:
+            conn.execute(text(
+                "INSERT INTO stores (name, timezone, is_active, created_at, updated_at) "
+                "VALUES (:name, :timezone, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ), {"name": "默认演示门店", "timezone": "Asia/Shanghai"})
+            stores = conn.execute(text("SELECT id FROM stores ORDER BY id LIMIT 1")).fetchone()
+        default_store_id = int(stores[0])
+
+        tables = {
+            row[0]
+            for row in conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )).fetchall()
+        }
+        for table in _STORE_SCOPED_TABLES:
+            if table not in tables:
+                continue
+            columns = _existing_columns(conn, table)
+            if "store_id" not in columns:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN store_id INTEGER"))
+            conn.execute(text(
+                f"UPDATE {table} SET store_id = :store_id WHERE store_id IS NULL"
+            ), {"store_id": default_store_id})
+        return default_store_id

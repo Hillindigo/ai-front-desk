@@ -94,7 +94,6 @@ class AdminAuthService:
             session.execute(delete(AdminSession))
             session.execute(delete(StoreMembership))
             session.execute(delete(MerchantAccount))
-            session.execute(delete(Store))
 
     def provision_account(
         self,

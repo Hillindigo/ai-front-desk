@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from ..base.interfaces import BaseTechnicianRepository, BaseScheduleRepository
 from ..base.session_manager import SessionManager
 from ..models import Technician, TechnicianSchedule
+from db.store_scope import resolve_store_id
 
 
 class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
@@ -24,7 +25,13 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
         """
         self.session_manager = session_manager
 
-    def add_technician(self, name: str, gender: Optional[str] = None, strength: Optional[str] = None) -> int:
+    def add_technician(
+        self,
+        name: str,
+        gender: Optional[str] = None,
+        strength: Optional[str] = None,
+        store_id: Optional[int] = None,
+    ) -> int:
         """
         添加新服务人员
         
@@ -37,12 +44,22 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
             新创建的服务人员ID
         """
         with self.session_manager.session_scope() as session:
-            technician = Technician(name=name, gender=gender, strength=strength)
+            technician = Technician(
+                name=name,
+                gender=gender,
+                strength=strength,
+                store_id=store_id,
+            )
+            technician.store_id = resolve_store_id(session, store_id)
             session.add(technician)
             session.flush()
             return technician.id
 
-    def get_technician_by_id(self, technician_id: int) -> Optional[Dict[str, Any]]:
+    def get_technician_by_id(
+        self,
+        technician_id: int,
+        store_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         根据ID获取服务人员信息
         
@@ -53,13 +70,16 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
             服务人员信息字典，如果不存在返回None
         """
         with self.session_manager.session_scope() as session:
-            technician = session.query(Technician).filter(
+            query = session.query(Technician).filter(
                 Technician.id == technician_id
-            ).first()
-            
+            )
+            if store_id is not None:
+                query = query.filter(Technician.store_id == store_id)
+            technician = query.first()
+
             if not technician:
                 return None
-                
+
             return self._technician_to_dict(technician)
 
     def get_technician_by_name(self, name: str) -> Optional[Dict[str, Any]]:
@@ -304,6 +324,7 @@ class TechnicianRepository(BaseTechnicianRepository, BaseScheduleRepository):
         """将服务人员对象转换为字典"""
         return {
             'id': technician.id,
+            'store_id': technician.store_id,
             'name': technician.name,
             'gender': technician.gender,
             'strength': technician.strength

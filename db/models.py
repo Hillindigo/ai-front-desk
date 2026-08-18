@@ -36,6 +36,7 @@ class Appointment(Base):
 
     id = Column(String(36), primary_key=True)                      # UUID，服务端生成
     user_id = Column(String(64), nullable=False, index=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     conversation_id = Column(String(36), nullable=True, index=True)  # 可空：后台创建
     service_type = Column(String(64), nullable=False)              # 对外服务项目字段
     project = Column(String(64), nullable=True)                    # 迁移期兼容字段
@@ -88,6 +89,7 @@ class Conversation(Base):
 
     id = Column(String(36), primary_key=True)
     user_id = Column(String(64), nullable=False, default='default_user', index=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     channel = Column(String(32), nullable=False, default='web')
     status = Column(String(16), nullable=False, default='active')  # active/closed
     active_workflow = Column(String(32), nullable=True)            # Phase C 状态机接入前可为空
@@ -124,6 +126,7 @@ class Message(Base):
 class Technician(Base):
     __tablename__ = 'technicians'
     id = Column(Integer, primary_key=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     name = Column(String, unique=True)
     gender = Column(String, nullable=True)      # 新增性别字段
     strength = Column(String, nullable=True)    # 新增力气/倾向性字段
@@ -142,6 +145,7 @@ class TechnicianSchedule(Base):
 class KnowledgeDocument(Base):
     __tablename__ = 'knowledge_documents'
     id = Column(Integer, primary_key=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     title = Column(String, nullable=True)                    # 文档标题（Phase F F1）
     content = Column(Text, nullable=False)
     category = Column(String, nullable=False)
@@ -165,6 +169,7 @@ class KnowledgeMeta(Base):
     """知识语料元信息（Phase F F3）：跨重启持久化语料版本等键值。"""
     __tablename__ = 'knowledge_meta'
     key = Column(String, primary_key=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     value = Column(JSON, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -239,6 +244,7 @@ class UserBehavior(Base):
     __tablename__ = 'user_behaviors'
     id = Column(Integer, primary_key=True)
     user_id = Column(String, nullable=False, default='default_user')  # 单用户场景使用默认用户ID
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     action_type = Column(String, nullable=False)  # 'appointment', 'consultation', 'inquiry'
     action_data = Column(JSON, nullable=True)  # 存储行为相关的详细数据
     technician_id = Column(Integer, ForeignKey('technicians.id'), nullable=True)
@@ -283,6 +289,7 @@ class Preference(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(String(64), nullable=False, default="default_user", index=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     preference_type = Column(String(32), nullable=False)
     preference_value = Column(Text, nullable=False)
     source = Column(String(32), nullable=False, default="explicit_memorize")
@@ -304,6 +311,7 @@ class PreferenceTombstone(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(String(64), nullable=False, index=True)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     preference_type = Column(String(32), nullable=False)
     normalized_value = Column(Text, nullable=False)
     original_preference_id = Column(Integer, nullable=True)

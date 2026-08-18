@@ -18,6 +18,7 @@ from sqlalchemy import and_, or_
 
 from ..base.session_manager import SessionManager
 from ..models import Appointment, AppointmentEvent
+from db.store_scope import resolve_store_id
 
 # 草稿白名单字段（C5 Agent 草稿持久化只允许写这些）
 DRAFT_FIELD_WHITELIST = {
@@ -36,6 +37,7 @@ def _appointment_to_dict(appt: Appointment) -> Dict[str, Any]:
     return {
         "id": appt.id,
         "user_id": appt.user_id,
+        "store_id": appt.store_id,
         "conversation_id": appt.conversation_id,
         "service_type": appt.service_type,
         "project": appt.project,
@@ -66,12 +68,19 @@ class AppointmentRepository:
 
     # ---------------- 查询 ----------------
 
-    def get(self, appointment_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get(
+        self,
+        appointment_id: str,
+        user_id: Optional[str] = None,
+        store_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """按 ID 获取；user_id 非空时校验归属。"""
         with self.session_manager.session_scope() as session:
             query = session.query(Appointment).filter(Appointment.id == appointment_id)
             if user_id is not None:
                 query = query.filter(Appointment.user_id == user_id)
+            if store_id is not None:
+                query = query.filter(Appointment.store_id == store_id)
             appt = query.first()
             if appt is None:
                 return None
@@ -170,6 +179,7 @@ class AppointmentRepository:
         service_type: str,
         fields: Optional[Dict[str, Any]] = None,
         ttl_hours: int = 24,
+        store_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """创建草稿预约 + created 事件（同事务）。"""
         now = datetime.utcnow()
@@ -177,11 +187,13 @@ class AppointmentRepository:
             appt = Appointment(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
+                store_id=store_id,
                 conversation_id=conversation_id,
                 service_type=service_type,
                 status="draft",
                 expires_at=now + timedelta(hours=ttl_hours),
             )
+            appt.store_id = resolve_store_id(session, store_id)
             self._apply_fields(appt, fields or {})
             session.add(appt)
             session.flush()
@@ -204,6 +216,7 @@ class AppointmentRepository:
         service_type: str,
         fields: Optional[Dict[str, Any]] = None,
         ttl_hours: int = 24,
+        store_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """原子创建或更新会话唯一活跃草稿。
 
@@ -229,6 +242,7 @@ class AppointmentRepository:
                 if appt.status == "pending_confirmation":
                     appt.status = "draft"
                 appt.service_type = service_type
+                appt.store_id = resolve_store_id(session, store_id)
                 self._apply_fields(appt, fields or {})
                 appt.expires_at = now + timedelta(hours=ttl_hours)
                 appt.version += 1
@@ -249,11 +263,13 @@ class AppointmentRepository:
             appt = Appointment(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
+                store_id=store_id,
                 conversation_id=conversation_id,
                 service_type=service_type,
                 status="draft",
                 expires_at=now + timedelta(hours=ttl_hours),
             )
+            appt.store_id = resolve_store_id(session, store_id)
             self._apply_fields(appt, fields or {})
             session.add(appt)
             session.flush()

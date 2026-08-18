@@ -3,6 +3,7 @@ from datetime import datetime
 from ..base.interfaces import BaseKnowledgeRepository
 from ..base.session_manager import SessionManager
 from ..models import KnowledgeDocument
+from db.store_scope import resolve_store_id
 
 
 class KnowledgeRepository(BaseKnowledgeRepository):
@@ -31,7 +32,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                     source_type: Optional[str] = None,
                     source_label: Optional[str] = None,
                     created_by: Optional[str] = None,
-                    document_version: int = 1) -> int:
+                    document_version: int = 1,
+                    store_id: Optional[int] = None) -> int:
         """
         添加知识文档
         
@@ -54,6 +56,7 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             document = KnowledgeDocument(
                 content=content,
                 category=category,
+                store_id=store_id,
                 keywords=keywords,
                 embedding=embedding,
                 title=title,
@@ -63,11 +66,16 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                 created_by=created_by,
                 document_version=document_version,
             )
+            document.store_id = resolve_store_id(session, store_id)
             session.add(document)
             session.flush()
             return document.id
 
-    def get_document(self, doc_id: int) -> Optional[Dict[str, Any]]:
+    def get_document(
+        self,
+        doc_id: int,
+        store_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         获取指定文档
         
@@ -78,16 +86,21 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             文档信息字典，如果不存在返回None
         """
         with self.session_manager.session_scope() as session:
-            document = session.query(KnowledgeDocument).filter(
+            query = session.query(KnowledgeDocument).filter(
                 KnowledgeDocument.id == doc_id
-            ).first()
-            
+            )
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            document = query.first()
             if not document:
                 return None
-                
             return self._document_to_dict(document)
 
-    def get_all_documents(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+    def get_all_documents(
+        self,
+        include_inactive: bool = False,
+        store_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         获取所有文档
         
@@ -102,17 +115,25 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             
             if not include_inactive:
                 query = query.filter(KnowledgeDocument.is_active == 1)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
                 
             documents = query.all()
             return [self._document_to_dict(doc) for doc in documents]
 
-    def get_published_documents(self) -> List[Dict[str, Any]]:
+    def get_published_documents(
+        self,
+        store_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """获取已发布且未删除的文档（Phase F：正式检索索引只由此构建）。"""
         with self.session_manager.session_scope() as session:
-            documents = session.query(KnowledgeDocument).filter(
+            query = session.query(KnowledgeDocument).filter(
                 KnowledgeDocument.is_active == 1,
                 KnowledgeDocument.status == "published",
-            ).all()
+            )
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            documents = query.all()
             return [self._document_to_dict(doc) for doc in documents]
 
     def list_documents(self, status: Optional[str] = None,
@@ -147,7 +168,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                        source_type: Optional[str] = None, source_label: Optional[str] = None,
                        updated_by: Optional[str] = None, document_version: Optional[int] = None,
                        knowledge_version: Optional[int] = None,
-                       published_at: Optional[Any] = None, archived_at: Optional[Any] = None) -> bool:
+                       published_at: Optional[Any] = None, archived_at: Optional[Any] = None,
+                       store_id: Optional[int] = None) -> bool:
         """
         更新文档（Phase F：支持标题/状态/来源/版本/发布时间等治理字段）
         
@@ -385,6 +407,7 @@ class KnowledgeRepository(BaseKnowledgeRepository):
         """将文档对象转换为字典（Phase F：含治理字段，不含敏感/内部嵌入外的公开字段）"""
         return {
             'id': document.id,
+            'store_id': document.store_id,
             'title': document.title,
             'content': document.content,
             'category': document.category,

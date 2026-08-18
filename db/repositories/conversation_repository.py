@@ -18,12 +18,14 @@ from typing import Any, Dict, List, Optional
 
 from ..base.session_manager import SessionManager
 from ..models import Conversation, Message
+from db.store_scope import resolve_store_id
 
 
 def _conversation_to_dict(conv: Conversation) -> Dict[str, Any]:
     return {
         "id": conv.id,
         "user_id": conv.user_id,
+        "store_id": conv.store_id,
         "channel": conv.channel,
         "status": conv.status,
         "active_workflow": conv.active_workflow,
@@ -60,21 +62,37 @@ class ConversationRepository:
 
     # ---------------- Conversation ----------------
 
-    def create_conversation(self, user_id: str = "default_user", channel: str = "web") -> Dict[str, Any]:
+    def create_conversation(
+        self,
+        user_id: str = "default_user",
+        channel: str = "web",
+        store_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """创建会话，返回新会话 dict。"""
-        conv = Conversation(id=str(uuid.uuid4()), user_id=user_id, channel=channel, status="active")
+        conv = Conversation(
+            id=str(uuid.uuid4()), user_id=user_id, store_id=store_id,
+            channel=channel, status="active",
+        )
         with self.session_manager.session_scope() as session:
+            conv.store_id = resolve_store_id(session, store_id)
             session.add(conv)
             session.flush()
             session.refresh(conv)
             return _conversation_to_dict(conv)
 
-    def get_conversation(self, conversation_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_conversation(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        store_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """按 ID 获取会话；user_id 非空时同时校验归属。返回 dict 或 None。"""
         with self.session_manager.session_scope() as session:
             query = session.query(Conversation).filter(Conversation.id == conversation_id)
             if user_id is not None:
                 query = query.filter(Conversation.user_id == user_id)
+            if store_id is not None:
+                query = query.filter(Conversation.store_id == store_id)
             conv = query.first()
             if conv is None:
                 return None

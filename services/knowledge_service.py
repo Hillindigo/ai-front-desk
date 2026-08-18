@@ -23,10 +23,14 @@ class KnowledgeService:
     def __init__(self, db_path: str | None = None,
                  min_score: float = 0.5,
                  max_candidates: int = 20,
-                 enable_keyword_prefilter: bool = True):  # Phase B 决策一：None 时取 db_config
+                 enable_keyword_prefilter: bool = True,
+                 store_id: Optional[int] = None):  # Phase B 决策一：None 时取 db_config
         # 使用统一的DatabaseRouter，符合架构设计
         self.db_router = DatabaseRouter(db_path)
         self.db = self.db_router.knowledge  # 通过router访问knowledge repository
+        from db.store_scope import resolve_store_id
+        with self.db_router.session_manager.session_scope() as session:
+            self.store_id = resolve_store_id(session, store_id)
         self.index = None
         self.document_ids = []  # 维护文档ID与索引位置的映射
         self.initialized = False
@@ -97,7 +101,7 @@ class KnowledgeService:
         """初始化知识库服务"""
         try:
             # 检查数据库中是否已有数据
-            existing_docs = self.db.get_all_documents()
+            existing_docs = self.db.get_all_documents(store_id=self.store_id)
             
             if not existing_docs:
                 logger.info("数据库为空，初始化默认知识库")
@@ -134,6 +138,7 @@ class KnowledgeService:
                     source_label="系统默认知识",
                     created_by="system",
                     document_version=1,
+                    store_id=self.store_id,
                 )
                 logger.debug(f"添加默认知识: {knowledge['content'][:50]}...")
                 
@@ -200,7 +205,7 @@ class KnowledgeService:
     async def _build_vector_index(self):
         """构建向量索引（E6 快照原子替换；F1：只从 published 文档构建，草稿不入正式检索）"""
         try:
-            documents = self.db.get_published_documents()
+            documents = self.db.get_published_documents(store_id=self.store_id)
             if not documents:
                 logger.warning("没有已发布文档可用于构建索引")
                 with self._lock:
@@ -263,7 +268,7 @@ class KnowledgeService:
                     continue  # 预过滤候选之外不检索
                 if float(score) < self.min_score:
                     continue  # 低于阈值 = 无可靠依据，不能进入回答上下文
-                doc = self.db.get_document(doc_id)
+                doc = self.db.get_document(doc_id, store_id=self.store_id)
                 if not doc:
                     continue
                 # F1：双保险——索引之外再校验当前状态必须是 published（归档/草稿不作为正式依据）
@@ -288,7 +293,7 @@ class KnowledgeService:
         """关键词预过滤：query 命中文档 keywords 的作为优先候选；无命中回退 None(全部)。"""
         hits = set()
         for doc_id in doc_ids:
-            doc = self.db.get_document(doc_id)
+            doc = self.db.get_document(doc_id, store_id=self.store_id)
             if not doc:
                 continue
             keywords = doc.get("keywords") or []
@@ -320,10 +325,10 @@ class KnowledgeService:
         preview: true（预览，不作为正式依据）；不改变当前服务快照。
         """
         include_draft_ids = list(include_draft_ids or [])
-        published = self.db.get_published_documents()
+        published = self.db.get_published_documents(store_id=self.store_id)
         by_id: Dict[int, Dict] = {int(d["id"]): d for d in published}
         for did in include_draft_ids:
-            d = self.db.get_document(int(did))
+            d = self.db.get_document(int(did), store_id=self.store_id)
             if d and str(d.get("status")) in ("draft", "failed"):
                 by_id[int(did)] = d
         if not by_id:
@@ -388,6 +393,7 @@ class KnowledgeService:
                 content, category, keywords, embedding,
                 title=title, status=status, source_type=source_type,
                 source_label=source_label, created_by=created_by,
+                store_id=self.store_id,
             )
             
             # 重建索引
@@ -410,7 +416,7 @@ class KnowledgeService:
             embedding = None
             if content is not None or keywords is not None:
                 # 获取当前文档信息
-                current_doc = self.db.get_document(doc_id)
+                current_doc = self.db.get_document(doc_id, store_id=self.store_id)
                 if not current_doc:
                     return False
                 
@@ -456,11 +462,11 @@ class KnowledgeService:
 
     def get_all_documents(self, include_inactive: bool = False) -> List[Dict]:
         """获取所有文档"""
-        return self.db.get_all_documents(include_inactive)
+        return self.db.get_all_documents(include_inactive, store_id=self.store_id)
 
     def get_document(self, doc_id: int) -> Dict:
         """获取指定文档"""
-        return self.db.get_document(doc_id)
+        return self.db.get_document(doc_id, store_id=self.store_id)
 
     def get_all_categories(self) -> List[str]:
         """获取所有分类"""

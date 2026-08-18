@@ -39,6 +39,8 @@ class SessionManager:
         try:
             from ..migrations import apply_knowledge_migrations
             apply_knowledge_migrations(self.engine)
+            from ..migrations import apply_store_migrations
+            apply_store_migrations(self.engine)
         except Exception:
             logger = __import__("logging").getLogger(__name__)
             logger.exception("知识库字段迁移失败（已降级继续，新字段按默认值处理）")
