@@ -109,8 +109,21 @@ API 文档：
 - `/technician`：服务人员状态（兼容旧 API 路径）
 - `/technician_schedule`：服务人员排班（兼容旧 API 路径）
 - `/user_behavior`：客户行为分析
-- `/admin`：运营概览
+- `/admin`：鉴权后的商家运营概览（账号、角色、当前门店和后台模块入口）
 - `/chat/stream`：流式对话接口（兼容入口；带 `conversation_id` 转发到指定会话，不带则使用默认演示会话）
+
+### 商家后台 API（Phase G）
+
+商家后台统一使用 `/api/v1/admin/...` 前缀，身份由服务端会话 Cookie 解析，写操作需要 `X-CSRF-Token`；客户端提交的 `user_id`、`role` 和 `store_id` 不作为权限来源。
+
+- `/api/v1/admin/auth/*`：登录、退出、当前身份、门店切换
+- `/api/v1/admin/config/*`：门店资料、服务目录、营业规则和预约政策
+- `/api/v1/admin/conversations/*`：会话工作台、人工接管、备注
+- `/api/v1/admin/appointments/*`：预约查询、确认、取消、改约
+- `/api/v1/admin/customers/*`：客户事实和回访任务
+- `/api/v1/admin/audit`、`/api/v1/admin/metrics`：审计与基础指标
+
+Phase G 已完成本地 Fake 模式下的商家后台最小闭环；多进程索引一致性、PII/备份清理、真实模型质量、外部渠道和生产部署加固仍待后续阶段验证。
 
 ### 会话 API（Phase B/D）
 
