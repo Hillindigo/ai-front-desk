@@ -7,13 +7,16 @@ FastAPI应用程序
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from services.technician_service import TechnicianService
 from services.recommendation_service import RecommendationService
 from services.appointment_cleanup import appointment_draft_cleanup_loop
 from config.settings import settings
+from api.core.security import SecurityHeadersMiddleware, RateLimitMiddleware
 from typing import List, Optional
 import logging
 import asyncio
+import os
 
 # 导入路由
 from api import api_routers
@@ -95,6 +98,24 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Phase I I1-E2：受信 Host（仅当设置 TRUSTED_HOSTS 时启用；未设置则不限制）
+    if settings.trusted_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+
+    # Phase I I1-E2：安全响应头 + 基础限流（纯 ASGI，不破坏 SSE 流式）
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        production=settings.is_production(),
+        csp_policy=os.getenv("CSP_POLICY") or None,
+    )
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_requests=int(os.getenv("RATE_LIMIT_PER_MIN", "600") or "600"),
+        window_seconds=int(os.getenv("RATE_LIMIT_WINDOW", "60") or "60"),
+        enabled=os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower()
+        in {"1", "true", "yes", "on"},
     )
 
     # 注册异常处理器

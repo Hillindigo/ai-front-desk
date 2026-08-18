@@ -54,6 +54,16 @@ def _fake_llm_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_security_rate_limiters():
+    """Phase I I1-E2：每个测试前清空进程内限流状态，避免累计触发 429。"""
+    from api.core.security import reset_rate_limiters
+
+    reset_rate_limiters()
+    yield
+    reset_rate_limiters()
+
+
+@pytest.fixture(autouse=True)
 def _clean_appointment_tables():
     """每个测试前清空预约/事件表（Phase C：session 级临时库避免数据残留干扰）。"""
     from sqlalchemy import text
