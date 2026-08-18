@@ -213,3 +213,9 @@ Phase G 已完成商家后台最小闭环：商家账号与客户身份分离、
 未完成或不冒充完成：生产密钥/部署加固、多进程知识索引一致性、PII 脱敏/导出/删除、备份清理、真实模型质量与人工评测、外部渠道接入、复杂后台交互和商业级可用性。
 
 本文件应记录稳定的项目知识，不替代具体 Phase 施工计划，也不记录未经验证的乐观结论。
+
+## 10. Phase H 当前交接事实
+
+Phase H 完成买家 Web + 商家工作台闭环（分支 dev，未合并/未推送）：买家会话恢复与标签页隔离、咨询到预约主路径（会话级预约契约 `GET /conversations/{id}/appointment`）、商家接管/人工回复/恢复 AI（`ConversationControl` 三态 ai_active/human_active/awaiting_human + orchestrator `chat_control` 阻断 AI 防双重回复）、SSE `handoff_required` 事件、契约全局审计测试、响应式与可访问性。买家消息命中转人工意图进入待人工队列；人工消息 `message_type=human` 写入同一会话并产生控制事件与审计。阶段代码与证据见 `Refactoring-Plan/Phase-H/` 各阶段文档与提交。
+
+未完成或不冒充完成：生产级身份系统、PII/备份/多进程、真实模型质量、第三方渠道、生产部署高可用。Phase I 应在已记录的契约/事件/审计之上建设，不重新实现 Phase H 的 Web 主路径。
