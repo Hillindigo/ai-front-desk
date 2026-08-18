@@ -114,6 +114,23 @@ def get_conversation(conversation_id: str, user_id: str = "default_user"):
     }
 
 
+@router.get("/{conversation_id}/appointment")
+def conversation_appointment(conversation_id: str, user_id: str = "default_user"):
+    """买家端会话预约状态（H2）：返回该会话的活跃预约与最近已定预约。
+
+    前端据此展示"当前预约"卡片并提供确认/取消动作；刷新后据此恢复未完成动作。
+    """
+    _resolve_session(conversation_id, user_id)
+    rows = get_container().db_router.appointments.list_by_conversation(conversation_id, limit=20) or []
+    active = next((r for r in rows if r["status"] in ("draft", "pending_confirmation")), None)
+    recent = next((r for r in rows if r["status"] not in ("draft", "pending_confirmation")), None)
+    return {
+        "conversation_id": conversation_id,
+        "active": active,
+        "recent": recent,
+    }
+
+
 @router.post("/{conversation_id}/turns")
 async def send_turn(conversation_id: str, request: TurnRequest):
     """发送一轮消息（Phase D D4：SSE 事件流，事件只描述当前轮次）。

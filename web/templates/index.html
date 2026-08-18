@@ -678,6 +678,7 @@ async function runTurn(text) {
             updateLastBotMessage(botMsg + '\n' + failMsg);
         } else if (eventName === 'run_completed') {
             loadTurnSources(conversationId);
+            loadAppointmentStatus();
         }
     });
     if (failed) return 'error:' + failMsg;
@@ -763,9 +764,99 @@ async function restoreFromServer() {
 }
 
 window.addEventListener('load', function () {
-    restoreFromServer();
+    restoreFromServer().then(function () { loadAppointmentStatus(); });
     userInput.focus();
 });
+
+    
+
+// === Phase H H2：买家预约主路径卡片 ===
+let appointmentCard = null;
+
+function ensureAppointmentCard() {
+    if (appointmentCard) return appointmentCard;
+    appointmentCard = document.createElement('div');
+    appointmentCard.id = 'appointment-card';
+    appointmentCard.style.cssText = 'margin:0 16px 10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font-size:13px;';
+    const box = document.getElementById('chat-box');
+    box.parentNode.insertBefore(appointmentCard, box);
+    return appointmentCard;
+}
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
+    });
+}
+
+const APPT_LABEL = {draft: '待补全', pending_confirmation: '待确认', confirmed: '已确认', cancelled: '已取消', expired: '已过期'};
+
+async function loadAppointmentStatus() {
+    if (!conversationId) return;
+    const card = ensureAppointmentCard();
+    try {
+        const res = await fetch('/api/v1/conversations/' + conversationId + '/appointment');
+        if (!res.ok) { card.innerHTML = '<div style="color:#999;">预约状态加载失败</div>'; return; }
+        const data = await res.json();
+        const active = data.active, recent = data.recent;
+        if (!active && !recent) { card.innerHTML = '<div style="color:#999;">当前暂无预约</div>'; return; }
+        const item = active || recent;
+        const status = APPT_LABEL[item.status] || item.status;
+        const when = item.start_time ? escHtml(item.start_time.replace('T', ' ').slice(0, 16)) : '待定';
+        let html = '<div style="font-weight:600;color:#333;">📅 当前预约 <span style="font-weight:400;color:#888;">#' + escHtml(item.id) + '</span></div>';
+        html += '<div style="margin-top:6px;line-height:1.7;">';
+        html += '<div>服务项目：' + escHtml(item.project || '—') + '</div>';
+        if (item.technician_id) html += '<div>服务人员：#' + escHtml(item.technician_id) + '</div>';
+        html += '<div>开始时间：' + when + '　·　状态：<b>' + escHtml(status) + '</b></div>';
+        html += '</div>';
+        if (item.status === 'pending_confirmation') {
+            html += '<div style="margin-top:8px;"><button type="button" data-act="confirm" data-id="' + escHtml(item.id) + '" style="padding:5px 14px;cursor:pointer;border:1px solid #10b981;background:#10b981;color:#fff;border-radius:6px;">确认预约</button></div>';
+        } else if (item.status === 'confirmed') {
+            html += '<div style="margin-top:8px;"><button type="button" data-act="cancel" data-id="' + escHtml(item.id) + '" style="padding:5px 14px;cursor:pointer;border:1px solid #ef4444;background:#fff;color:#ef4444;border-radius:6px;">取消预约</button></div>';
+        }
+        card.innerHTML = html;
+        const btn = card.querySelector('button[data-act]');
+        if (btn) btn.onclick = function () { performAppointmentAction(btn.dataset.act, btn.dataset.id, btn); };
+    } catch (e) {
+        card.innerHTML = '<div style="color:#999;">预约状态加载失败</div>';
+    }
+}
+
+async function performAppointmentAction(act, id, btn) {
+    if (!btn) return;
+    const OLD = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = '处理中...';
+    const idem = 'h2:' + act + ':' + id + ':' + (conversationId || '');
+    try {
+        const res = await fetch('/api/v1/appointments/' + id + '/' + act, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: 'default_user', idempotency_key: idem})
+        });
+        if (!res.ok) {
+            let msg = '操作失败';
+            try { msg = (await res.json()).detail.message || msg; } catch (e) { /* keep */ }
+            btn.innerHTML = OLD;
+            btn.disabled = false;
+            const m = document.createElement('div');
+            m.style.cssText = 'margin-top:6px;color:#dc2626;';
+            m.textContent = '⚠️ ' + msg;
+            btn.parentNode.appendChild(m);
+            return;
+        }
+        await loadAppointmentStatus();
+    } catch (e) {
+        btn.innerHTML = OLD;
+        btn.disabled = false;
+        const m = document.createElement('div');
+        m.style.cssText = 'margin-top:6px;color:#dc2626;';
+        m.textContent = '⚠️ 服务暂时不可用，请稍后重试';
+        btn.parentNode.appendChild(m);
+    }
+}
+
+// 刷新后恢复预约卡片（等会话恢复完成后）
 
     </script>
 </body>

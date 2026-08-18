@@ -103,6 +103,18 @@ class AppointmentRepository:
             session.refresh(appt)
             return _appointment_to_dict(appt)
 
+    def list_by_conversation(self, conversation_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """按会话返回最近预约（按创建时间倒序），供买家端会话预约状态卡片。"""
+        with self.session_manager.session_scope() as session:
+            rows = (
+                session.query(Appointment)
+                .filter(Appointment.conversation_id == conversation_id)
+                .order_by(Appointment.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [_appointment_to_dict(r) for r in rows]
+
     def get_by_idempotency(self, user_id: str, idempotency_key: str) -> Optional[Dict[str, Any]]:
         """幂等查询：相同 (user_id, idempotency_key) 的已存在预约。"""
         with self.session_manager.session_scope() as session:
