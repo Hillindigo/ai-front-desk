@@ -49,7 +49,10 @@ def get_task_agent_for(session):
     if session.agent is None:
         session_id = session.conversation_id
         appointment_agent = AppointmentAgent(session_id=session_id)
-        consultant_agent = ConsultantAgent(session_id=session_id)
+        consultant_agent = ConsultantAgent(
+            session_id=session_id,
+            knowledge_service=get_container().knowledge_service,
+        )
 
         # 从 DB 恢复历史（role: user/assistant -> human/ai）
         for message in session.recent_messages:

@@ -170,7 +170,9 @@ def update_document(doc_id: int, body: DocumentUpdate):
 @router.post("/documents/{doc_id}/preview")
 async def preview_document(doc_id: int, body: Optional[SearchPreviewRequest] = None):
     """候选版本检索预览（仅该草稿 + 已发布；结果标记 preview:true）。"""
-    _identity("default_user")
+    # 有请求体时必须校验其中的兼容 user_id，不能因预览接口缺少独立
+    # query 参数而绕过身份边界。
+    _identity(body.user_id if body is not None else "default_user")
     query = (body.query if body else None) or ""
     try:
         _, _, kb = _ser()

@@ -12,6 +12,7 @@
 import pytest
 
 from application.container import Container
+from agents.consultant_agent import ConsultantAgent
 from services.knowledge_contracts import (
     InvalidKnowledgeInputError,
     KnowledgeNotFoundError,
@@ -35,6 +36,13 @@ class TestContainerSingleInstance:
 
     def test_索引已初始化(self, mgmt):
         assert mgmt.knowledge_service.initialized is True
+
+    def test_旧咨询代理注入容器知识服务(self, mgmt):
+        agent = ConsultantAgent(
+            session_id="phase-f-single-instance",
+            knowledge_service=mgmt.knowledge_service,
+        )
+        assert agent.knowledge_retriever.knowledge_service is mgmt.knowledge_service
 
 
 class TestCreateList:

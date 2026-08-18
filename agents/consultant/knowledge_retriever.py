@@ -4,7 +4,7 @@
 负责从知识库中检索相关信息
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 from services.knowledge_service import KnowledgeService
 logger = logging.getLogger(__name__)
@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 class KnowledgeRetriever:
     """知识检索器"""
     
-    def __init__(self):
-        self.knowledge_service = KnowledgeService()
+    def __init__(self, knowledge_service: Optional[KnowledgeService] = None):
+        # 默认路径仍保持兼容；应用容器路径注入唯一实例，避免旧咨询链
+        # 绕过容器重新创建 KnowledgeService。
+        self.knowledge_service = knowledge_service or KnowledgeService()
         self.kb_initialized = False
     
     async def initialize(self):

@@ -54,7 +54,7 @@ class KnowledgeEvaluationRunner:
         hit = bool(keywords and any(
             any(kw in t for kw in keywords) for t in texts
         )) if rows else False
-        return {"hit": hit, "ids": sorted(ids), "count": len(rows)}
+        return {"hit": hit, "ids": sorted(ids), "rows": rows, "count": len(rows)}
 
     async def evaluate(self, cases: List[EvalCase] = None) -> Dict[str, Any]:
         cases = cases or EVAL_CASES
@@ -66,7 +66,7 @@ class KnowledgeEvaluationRunner:
             refused = False
             if case.expect_refusal:
                 refused = await self._refusal_contract(case.query)
-            citation_ok = await self._citation_ok(hit_info["ids"], case)
+            citation_ok = await self._citation_ok(hit_info["rows"], case)
             results.append(EvalResult(
                 case_id=case.id, dimension=case.dimension,
                 hit=hit_info["hit"], expected_hit=case.expected_hit,
@@ -85,7 +85,7 @@ class KnowledgeEvaluationRunner:
         metrics = {
             "hit_rate": round(hit_true / hit_have, 4) if hit_have else None,
             "refusal_contract_rate": round(n_refused / n_expected_refusal, 4) if n_expected_refusal else None,
-            "citation_completeness": self.citation_completeness(),
+            "citation_completeness": self.citation_completeness(results),
             "old_version_leak": await self.old_version_leak(),
             "post_publish_available": await self.post_publish_available(),
         }
@@ -129,20 +129,38 @@ class KnowledgeEvaluationRunner:
         text = "".join(tokens)
         return ("依据" in text or "咨询" in text or "门店" in text or "致电" in text)
 
-    async def _citation_ok(self, ids: Any, case: EvalCase) -> bool:
-        """引用完整性：命中证据都能转出带 document_id 的引用片段。"""
-        if not ids:
+    async def _citation_ok(self, rows: Any, case: EvalCase) -> bool:
+        """引用完整性：实际检索结果包含可展示的来源字段。"""
+        if not rows:
             return True
+        fake_evidence = []
+        for row in rows:
+            fake_evidence.append({
+                "document_id": row.get("id"),
+                "category": row.get("category", ""),
+                "snippet": str(row.get("content") or "")[:200],
+                "score": row.get("score", 0.0),
+                "source_version": row.get("source_version", ""),
+                "rank": row.get("rank"),
+            })
+        if any(
+            not ev["document_id"] or not ev["snippet"] or
+            not str(ev["source_version"]).startswith("index-")
+            for ev in fake_evidence
+        ):
+            return False
         from application.workflows import ConsultationWorkflow
-        fake_evidence = [
-            {"document_id": i, "category": "c", "snippet": "片段", "score": 0.9,
-             "source_version": "index-1", "rank": 1} for i in ids
-        ]
         docs = ConsultationWorkflow._evidence_to_knowledge_docs(fake_evidence)
         return bool(docs) and all(d.get("document_id") for d in docs)
 
-    def citation_completeness(self) -> float:
-        return 1.0
+    def citation_completeness(self, results: List[EvalResult]) -> float:
+        """按实际评测用例计算引用完整率，不使用固定常量。"""
+        if not results:
+            return 1.0
+        return round(
+            sum(1 for result in results if result.citation_ok) / len(results),
+            4,
+        )
 
     async def old_version_leak(self) -> int:
         """旧版本泄漏：正式检索里出现的文档必须当前是 published（否则算泄漏）。"""

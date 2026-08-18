@@ -127,6 +127,9 @@ class KnowledgePublishService:
             # 3) 提交 DB（成功后原子交换；若 DB 失败不交换，保留旧快照）
             new_kv = self.current_knowledge_version() + 1
             now = datetime.now(timezone.utc)
+            old_doc = dict(doc)
+            old_meta = self._repo.get_meta(_KNOWLEDGE_VERSION_KEY, None)
+            old_snapshot = self._kb.snapshot_state()
             try:
                 self._repo.update_document(
                     int(doc_id),
@@ -139,10 +142,18 @@ class KnowledgePublishService:
                 )
                 self._repo.set_meta(_KNOWLEDGE_VERSION_KEY, new_kv)
             except Exception as e:
+                self._restore_publish_state(doc_id, old_doc, old_meta, old_snapshot)
                 self._mark_failed(doc, f"数据库提交失败: {e}")
                 raise IndexBuildFailedError(f"数据库提交失败: {e}")
 
-            sv = self._kb.swap_candidate(candidate)
+            try:
+                sv = self._kb.swap_candidate(candidate)
+            except Exception as e:
+                # DB 已提交但索引尚未切换：恢复两侧状态，避免 published 文档
+                # 与旧索引快照不一致；恢复后仍将本次发布标记为 failed。
+                self._restore_publish_state(doc_id, old_doc, old_meta, old_snapshot)
+                self._mark_failed(doc, f"索引交换失败: {e}")
+                raise IndexBuildFailedError(f"索引交换失败: {e}")
             self._record = RefreshRecord(
                 status="succeeded",
                 started_at=self._record.started_at,
@@ -159,6 +170,15 @@ class KnowledgePublishService:
                 source_version=sv,
                 status=KnowledgeStatus.PUBLISHED.value,
             ).to_dict()
+
+    def _restore_publish_state(self, doc_id, old_doc, old_meta, old_snapshot) -> None:
+        """尽力恢复发布前的数据库、语料版本和内存快照。"""
+        try:
+            self._repo.restore_document_state(int(doc_id), old_doc)
+            self._repo.set_meta(_KNOWLEDGE_VERSION_KEY, old_meta)
+            self._kb.restore_snapshot_state(old_snapshot)
+        except Exception:
+            logger.exception("发布回滚失败，当前状态需要人工核对")
 
     async def refresh(self) -> Dict[str, Any]:
         """重建当前正式索引（仅 published），用于归档/恢复后的对账。"""

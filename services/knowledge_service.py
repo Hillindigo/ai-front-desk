@@ -178,6 +178,25 @@ class KnowledgeService:
         with self._lock:
             return f"index-{self._index_version}"
 
+    def snapshot_state(self):
+        """返回当前正式索引快照，用于发布失败时恢复内存状态。"""
+        with self._lock:
+            return (
+                self._snapshot,
+                self.index,
+                list(self.document_ids),
+                self._index_version,
+            )
+
+    def restore_snapshot_state(self, state) -> None:
+        """恢复发布前的正式索引快照；不创建新的 source_version。"""
+        snapshot, index, document_ids, index_version = state
+        with self._lock:
+            self._snapshot = snapshot
+            self.index = index
+            self.document_ids = list(document_ids)
+            self._index_version = index_version
+
     async def _build_vector_index(self):
         """构建向量索引（E6 快照原子替换；F1：只从 published 文档构建，草稿不入正式检索）"""
         try:
@@ -305,7 +324,7 @@ class KnowledgeService:
         by_id: Dict[int, Dict] = {int(d["id"]): d for d in published}
         for did in include_draft_ids:
             d = self.db.get_document(int(did))
-            if d:
+            if d and str(d.get("status")) in ("draft", "failed"):
                 by_id[int(did)] = d
         if not by_id:
             return []

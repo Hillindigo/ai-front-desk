@@ -122,6 +122,31 @@ class TestPublishFailureFallback:
         assert status["status"] == "failed"
         assert status["multi_process"] is False
 
+    @pytest.mark.asyncio
+    async def test_索引交换失败回滚数据库和快照(self, pub, monkeypatch):
+        m = pub.knowledge_management
+        p = pub.knowledge_publish
+        kb = pub.knowledge_service
+        old_version = p.current_knowledge_version()
+        old_source = p.get_source_version()
+        doc = m.create_document(title="交换失败", content="交换失败测试内容",
+                                category="测试", keywords=["交换失败"])
+
+        def boom(_candidate):
+            raise RuntimeError("swap unavailable")
+
+        monkeypatch.setattr(kb, "swap_candidate", boom)
+        with pytest.raises(IndexBuildFailedError):
+            await p.publish_document(doc["document_id"])
+
+        failed = m.get_document(doc["document_id"])
+        assert failed["status"] == "failed"
+        assert failed["knowledge_version"] is None
+        assert p.current_knowledge_version() == old_version
+        assert p.get_source_version() == old_source
+        rows = await kb.search("交换失败", top_k=10)
+        assert all(row["id"] != doc["document_id"] for row in rows)
+
 
 class TestConcurrency:
     async def test_并发发布串行且唯一(self, pub):

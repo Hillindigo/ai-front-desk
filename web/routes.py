@@ -9,11 +9,21 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from api.chat_handler import ProcessUserInput_stream
 import logging
+import inspect
 
 # 创建logger实例
 logger = logging.getLogger(__name__)
 # 模板配置
 templates = Jinja2Templates(directory="web/templates")
+
+
+def _render_template(name: str, context: dict):
+    """兼容旧版与新版 Starlette 的模板响应参数顺序。"""
+    if "request" in inspect.signature(templates.TemplateResponse).parameters:
+        return templates.TemplateResponse(
+            request=context["request"], name=name, context=context
+        )
+    return templates.TemplateResponse(name, context)
 
 # Web路由器
 router = APIRouter(tags=["Web界面"])
@@ -27,7 +37,7 @@ class ChatRequest(BaseModel):
 @router.get("/", response_class=HTMLResponse, summary="主页")
 async def read_root(request: Request):
     """渲染主页聊天界面"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return _render_template("index.html", {"request": request})
 
 @router.post("/chat/stream", summary="流式聊天")
 async def chat_stream_endpoint(chat: ChatRequest):
@@ -44,7 +54,7 @@ async def chat_stream_endpoint(chat: ChatRequest):
 @router.get("/user_behavior", response_class=HTMLResponse, summary="用户行为分析页面")
 async def user_behavior_page(request: Request):
     """用户行为分析页面"""
-    return templates.TemplateResponse("user_behavior_analysis.html", {"request": request})
+    return _render_template("user_behavior_analysis.html", {"request": request})
 
 @router.get("/knowledge", response_class=HTMLResponse, summary="知识库管理页面")
 async def knowledge_page(request: Request):
@@ -58,13 +68,13 @@ async def knowledge_page(request: Request):
         documents = knowledge_data.get("documents", [])
         categories = knowledge_data.get("categories", [])
         
-        return templates.TemplateResponse("knowledge_management.html", {
+        return _render_template("knowledge_management.html", {
             "request": request,
             "documents": documents,
             "categories": categories
         })
     except Exception as e:
-        return templates.TemplateResponse("knowledge_management.html", {
+        return _render_template("knowledge_management.html", {
             "request": request,
             "documents": [],
             "categories": [],
@@ -81,12 +91,12 @@ async def technician_page(request: Request):
         # 调用API层函数获取数据
         technicians = await get_all_technicians()
         
-        return templates.TemplateResponse("technician.html", {
+        return _render_template("technician.html", {
             "request": request,
             "technicians": technicians
         })
     except Exception as e:
-        return templates.TemplateResponse("technician.html", {
+        return _render_template("technician.html", {
             "request": request,
             "technicians": [],
             "error": str(e)
@@ -114,14 +124,14 @@ async def technician_schedule_page(request: Request):
                 "busy_periods": schedule_item["busy_periods"]
             })
         
-        return templates.TemplateResponse("technician_schedule.html", {
+        return _render_template("technician_schedule.html", {
             "request": request,
             "schedule": schedule,
             "current_date": current_date
         })
     except Exception as e:
         logger.error(f"加载服务人员排班数据失败: {str(e)}")
-        return templates.TemplateResponse("technician_schedule.html", {
+        return _render_template("technician_schedule.html", {
             "request": request,
             "schedule": [],
             "error": str(e)
@@ -130,7 +140,7 @@ async def technician_schedule_page(request: Request):
 @router.get("/user_behavior_analysis", response_class=HTMLResponse, summary="用户行为分析页面")
 async def user_behavior_analysis_page(request: Request):
     """用户行为分析页面"""
-    return templates.TemplateResponse("user_behavior_analysis.html", {"request": request})
+    return _render_template("user_behavior_analysis.html", {"request": request})
 
 @router.get("/admin", response_class=HTMLResponse, summary="系统管理页面")
 async def admin_dashboard(request: Request):
@@ -156,13 +166,13 @@ async def admin_dashboard(request: Request):
             "categories": categories
         }
         
-        return templates.TemplateResponse("admin_dashboard.html", {
+        return _render_template("admin_dashboard.html", {
             "request": request,
             "db_info": db_info,
             "technicians": technicians[:5]  # 只显示前5个服务人员
         })
     except Exception as e:
-        return templates.TemplateResponse("admin_dashboard.html", {
+        return _render_template("admin_dashboard.html", {
             "request": request,
             "db_info": {},
             "technicians": [],
@@ -190,12 +200,12 @@ async def database_admin_page(request: Request):
             "appointments": 0  # TODO: 通过API获取预约数量
         }
         
-        return templates.TemplateResponse("database_admin.html", {
+        return _render_template("database_admin.html", {
             "request": request,
             "stats": stats
         })
     except Exception as e:
-        return templates.TemplateResponse("database_admin.html", {
+        return _render_template("database_admin.html", {
             "request": request,
             "stats": {},
             "error": str(e)

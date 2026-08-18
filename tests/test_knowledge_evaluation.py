@@ -53,6 +53,15 @@ async def test_评测失败不被标为达标(eval_env):
 
 
 @pytest.mark.asyncio
+async def test_引用完整率来自实际结果而非固定常量(eval_env):
+    _, runner = eval_env
+    runner._citation_ok = _async_ret(False)
+    result = await runner.evaluate(EVAL_CASES)
+    assert result["metrics"]["citation_completeness"] == 0.0
+    assert result["quality_pass"] is False
+
+
+@pytest.mark.asyncio
 async def test_命中与拒答契约覆盖(eval_env):
     _, runner = eval_env
     result = await runner.evaluate()

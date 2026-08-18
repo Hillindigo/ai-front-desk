@@ -207,6 +207,24 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             document.updated_at = datetime.utcnow()
             return True
 
+    def restore_document_state(self, doc_id: int, state: Dict[str, Any]) -> bool:
+        """恢复发布前的完整文档状态，允许显式恢复 NULL 字段。"""
+        with self.session_manager.session_scope() as session:
+            document = session.query(KnowledgeDocument).filter(
+                KnowledgeDocument.id == doc_id
+            ).first()
+            if not document:
+                return False
+            for field in (
+                "title", "content", "category", "keywords", "embedding", "status",
+                "document_version", "knowledge_version", "source_type", "source_label",
+                "created_by", "updated_by", "published_at", "archived_at", "is_active",
+            ):
+                if field in state:
+                    setattr(document, field, state[field])
+            document.updated_at = datetime.utcnow()
+            return True
+
     def delete_document(self, doc_id: int, soft_delete: bool = True) -> bool:
         """
         删除文档（支持软删除）

@@ -89,6 +89,13 @@ class TestPublishViaAPI:
         assert prev.status_code == 200
         assert prev.json()["preview"] is True
 
+        # 预览接口也必须校验请求体中的兼容身份字段，不能绕过 403 边界。
+        denied_preview = client.post(
+            f"/api/v1/knowledge/documents/{did}/preview",
+            json={"query": "肩颈", "top_k": 5, "user_id": "other_user"},
+        )
+        assert denied_preview.status_code == 403
+
         # 发布
         pub = client.post(f"/api/v1/knowledge/documents/{did}/publish")
         assert pub.status_code == 200

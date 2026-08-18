@@ -1,6 +1,8 @@
 import uuid
 import logging
+from typing import Optional
 from config.model_provider import create_chat_model
+from services.knowledge_service import KnowledgeService
 logger = logging.getLogger(__name__)
 from .consultant import (
     KnowledgeRetriever,
@@ -20,7 +22,7 @@ class ConsultantAgent:
     3. 协调整个咨询流程
     """
     
-    def __init__(self, session_id=None):
+    def __init__(self, session_id=None, knowledge_service: Optional[KnowledgeService] = None):
         # 基础设置
         self.session_id = session_id or str(uuid.uuid4())
         self.shared_state = None
@@ -30,7 +32,7 @@ class ConsultantAgent:
         self.llm = self._initialize_llm()
         
         # 初始化组件
-        self.knowledge_retriever = KnowledgeRetriever()
+        self.knowledge_retriever = KnowledgeRetriever(knowledge_service=knowledge_service)
         self.consultation_classifier = ConsultationClassifier(self.llm)
         self.response_generator = ResponseGenerator(self.llm)
         self.consultation_processor = ConsultationProcessor(
