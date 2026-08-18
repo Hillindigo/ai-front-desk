@@ -354,7 +354,7 @@ class KnowledgeService:
             doc_id = doc_ids[pos]
             if float(score) < self.min_score:
                 continue
-            doc = self.db.get_document(int(doc_id))
+            doc = self.db.get_document(int(doc_id), store_id=self.store_id)
             if not doc:
                 continue
             is_draft = str(doc.get("status", "")) != "published"
@@ -433,6 +433,7 @@ class KnowledgeService:
                 doc_id, content, category, keywords, embedding,
                 title=title, status=status, source_type=source_type,
                 source_label=source_label, updated_by=updated_by,
+                store_id=self.store_id,
             )
             
             if success and embedding is not None:
@@ -448,7 +449,7 @@ class KnowledgeService:
     async def delete_document(self, doc_id: int, soft_delete: bool = True) -> bool:
         """删除文档"""
         try:
-            success = self.db.delete_document(doc_id, soft_delete)
+            success = self.db.delete_document(doc_id, soft_delete, store_id=self.store_id)
             
             if success:
                 # 重建索引
@@ -470,16 +471,16 @@ class KnowledgeService:
 
     def get_all_categories(self) -> List[str]:
         """获取所有分类"""
-        return self.db.get_all_categories()
+        return self.db.get_all_categories(store_id=self.store_id)
 
     def get_documents_count(self) -> int:
         """获取文档总数"""
-        return self.db.get_documents_count()
+        return self.db.get_documents_count(store_id=self.store_id)
 
     def search_by_category(self, category: str) -> List[Dict]:
         """按分类搜索文档"""
-        return self.db.search_documents_by_category(category)
+        return self.db.search_documents_by_category(category, store_id=self.store_id)
 
     def search_by_keywords(self, keywords: List[str]) -> List[Dict]:
         """按关键词搜索文档"""
-        return self.db.search_documents_by_keywords(keywords)
+        return self.db.search_documents_by_keywords(keywords, store_id=self.store_id)

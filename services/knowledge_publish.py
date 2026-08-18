@@ -47,13 +47,17 @@ class KnowledgePublishService:
     def __init__(self, knowledge_service):
         self._kb = knowledge_service
         self._repo = knowledge_service.db
+        self._store_id = knowledge_service.store_id
+        # knowledge_meta.key is a legacy primary key, so namespace per-store
+        # metadata until the schema can be migrated to a composite key.
+        self._version_key = f"{_KNOWLEDGE_VERSION_KEY}:{self._store_id}"
         self._lock = asyncio.Lock()
         self._record: RefreshRecord = RefreshRecord(status="idle")
 
     # ---------------- 状态查询 ----------------
 
     def current_knowledge_version(self) -> int:
-        return int(self._repo.get_meta(_KNOWLEDGE_VERSION_KEY, 0) or 0)
+        return int(self._repo.get_meta(self._version_key, 0, store_id=self._store_id) or 0)
 
     def refresh_status(self, requested: bool = False) -> Dict[str, Any]:
         sv = self.get_source_version()
@@ -87,7 +91,7 @@ class KnowledgePublishService:
             self._record = RefreshRecord(
                 status="building", started_at=_ts(datetime.now(timezone.utc)),
             )
-            doc = self._repo.get_document(int(doc_id))
+            doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
             if not doc:
                 raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
             current = KnowledgeStatus(doc["status"])
@@ -110,7 +114,7 @@ class KnowledgePublishService:
                 raise IndexBuildFailedError(f"Embedding 失败: {e}")
 
             # 2) 构建候选 = 已发布文档 + 本条（视为已发布）；失败不交换
-            published = self._repo.get_published_documents()
+            published = self._repo.get_published_documents(store_id=self._store_id)
             by_id: Dict[int, Dict[str, Any]] = {d["id"]: d for d in published}
             target_row = dict(doc)
             target_row["embedding"] = emb
@@ -128,7 +132,7 @@ class KnowledgePublishService:
             new_kv = self.current_knowledge_version() + 1
             now = datetime.now(timezone.utc)
             old_doc = dict(doc)
-            old_meta = self._repo.get_meta(_KNOWLEDGE_VERSION_KEY, None)
+            old_meta = self._repo.get_meta(self._version_key, None, store_id=self._store_id)
             old_snapshot = self._kb.snapshot_state()
             try:
                 self._repo.update_document(
@@ -139,8 +143,9 @@ class KnowledgePublishService:
                     embedding=emb,
                     published_at=now,
                     updated_by="operator",
+                    store_id=self._store_id,
                 )
-                self._repo.set_meta(_KNOWLEDGE_VERSION_KEY, new_kv)
+                self._repo.set_meta(self._version_key, new_kv, store_id=self._store_id)
             except Exception as e:
                 self._restore_publish_state(doc_id, old_doc, old_meta, old_snapshot)
                 self._mark_failed(doc, f"数据库提交失败: {e}")
@@ -174,8 +179,8 @@ class KnowledgePublishService:
     def _restore_publish_state(self, doc_id, old_doc, old_meta, old_snapshot) -> None:
         """尽力恢复发布前的数据库、语料版本和内存快照。"""
         try:
-            self._repo.restore_document_state(int(doc_id), old_doc)
-            self._repo.set_meta(_KNOWLEDGE_VERSION_KEY, old_meta)
+            self._repo.restore_document_state(int(doc_id), old_doc, store_id=self._store_id)
+            self._repo.set_meta(self._version_key, old_meta, store_id=self._store_id)
             self._kb.restore_snapshot_state(old_snapshot)
         except Exception:
             logger.exception("发布回滚失败，当前状态需要人工核对")
@@ -187,7 +192,7 @@ class KnowledgePublishService:
                 status="building", started_at=_ts(datetime.now(timezone.utc)),
             )
             try:
-                documents = self._repo.get_published_documents()
+                documents = self._repo.get_published_documents(store_id=self._store_id)
                 if not documents:
                     with self._kb._lock:
                         self._kb._snapshot = None
@@ -228,6 +233,7 @@ class KnowledgePublishService:
                 int(doc["id"]),
                 status=KnowledgeStatus.FAILED.value,
                 updated_by="operator",
+                store_id=self._store_id,
             )
         except Exception:
             logger.exception("发布失败标记 failed 时出错")

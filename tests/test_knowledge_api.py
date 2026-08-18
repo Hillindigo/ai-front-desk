@@ -3,7 +3,7 @@
 覆盖：
 - 创建草稿 -> 列表/详情/更新 -> 预览 -> 发布 -> 检索 -> 归档 的 HTTP 闭环。
 - 错误码：INVALID_INPUT(422)、KNOWLEDGE_NOT_FOUND(404)、INVALID_STATE_TRANSITION(409)。
-- 身份边界：user_id 与已解析身份不一致 -> 403。
+- 身份边界：未登录拒绝；兼容 user_id 不作为权限来源。
 - 响应不返回 embedding、Prompt 或供应商原始响应。
 - 刷新状态/重建索引接口。
 """
@@ -12,12 +12,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import create_app
+from services.admin_auth import AdminAuthService
 
 
 @pytest.fixture(scope="module")
 def client():
+    auth = AdminAuthService()
+    auth.clear_for_tests()
+    auth.provision_account(
+        username="knowledge-owner@example.test",
+        password="Correct-Horse-7!",
+        display_name="knowledge-owner",
+        store_name="知识测试门店",
+        role="owner",
+    )
     with TestClient(create_app()) as c:
+        login = c.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "knowledge-owner@example.test", "password": "Correct-Horse-7!"},
+        )
+        assert login.status_code == 200, login.text
+        c.headers.update({"X-CSRF-Token": login.json()["csrf_token"]})
         yield c
+    auth.clear_for_tests()
+    auth.close()
 
 
 def _mk_doc(client, title="测试接口条目", content="门店周五休息半天", category="营业时间",
@@ -73,7 +91,7 @@ class TestDocumentCRUD:
 
     def test_身份不一致返回403(self, client):
         resp = client.get("/api/v1/knowledge/documents?user_id=someone_else")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
 
 class TestPublishViaAPI:
@@ -89,12 +107,12 @@ class TestPublishViaAPI:
         assert prev.status_code == 200
         assert prev.json()["preview"] is True
 
-        # 预览接口也必须校验请求体中的兼容身份字段，不能绕过 403 边界。
+        # 兼容 user_id 只能作为历史字段，不能成为权限来源。
         denied_preview = client.post(
             f"/api/v1/knowledge/documents/{did}/preview",
             json={"query": "肩颈", "top_k": 5, "user_id": "other_user"},
         )
-        assert denied_preview.status_code == 403
+        assert denied_preview.status_code == 200
 
         # 发布
         pub = client.post(f"/api/v1/knowledge/documents/{did}/publish")

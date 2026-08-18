@@ -86,6 +86,13 @@ class Container:
         self.knowledge_service = KnowledgeService(self.db_path)
         self.knowledge_management = KnowledgeManagementService(self.knowledge_service)
         self.knowledge_publish = KnowledgePublishService(self.knowledge_service)
+        self._knowledge_bundles = {
+            self.knowledge_service.store_id: (
+                self.knowledge_service,
+                self.knowledge_management,
+                self.knowledge_publish,
+            )
+        }
 
         self.summary_repository = SummaryRepository(self.db_router.session_manager)
         self.context_builder = ContextBuilder(
@@ -113,7 +120,26 @@ class Container:
         )
 
     def close(self) -> None:
+        # Each store-bound KnowledgeService owns a DatabaseRouter. Close all
+        # cached routers before closing the container router.
+        for kb, _, _ in self._knowledge_bundles.values():
+            if kb is not self.knowledge_service:
+                kb.db_router.close()
         self.db_router.close()
+
+    def get_knowledge_bundle(self, store_id: int):
+        """Return management/search services bound to exactly one store."""
+        store_id = int(store_id)
+        bundle = self._knowledge_bundles.get(store_id)
+        if bundle is None:
+            from services.knowledge_service import KnowledgeService
+            from services.knowledge_management import KnowledgeManagementService
+            from services.knowledge_publish import KnowledgePublishService
+
+            kb = KnowledgeService(self.db_path, store_id=store_id)
+            bundle = (kb, KnowledgeManagementService(kb), KnowledgePublishService(kb))
+            self._knowledge_bundles[store_id] = bundle
+        return bundle
 
     async def initialize(self) -> None:
         """一次性初始化（F2）：构建容器持有知识的索引快照，供管理与咨询共享。

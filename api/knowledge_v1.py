@@ -1,8 +1,7 @@
 """Phase F F4：版本化知识管理 API（/api/v1/knowledge）。
 
-计划 3.1 规范管理接口；沿用 IdentityResolver 演示身份边界：
-- 请求体 user_id 只作兼容校验/归属字段，不能成为权限来源；
-- 未完成真实管理员鉴权（本阶段明确记录，不宣称生产可用）。
+计划 3.1 规范管理接口；知识管理请求必须经过商家服务端会话、角色权限和
+active_store 绑定。请求体 user_id 仅保留为兼容字段，不能成为权限来源。
 
 错误码映射：
 - INVALID_INPUT -> 422
@@ -17,11 +16,11 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from api.chat_handler import get_container
-from application.identity import IdentityError
+from api.admin_auth import require_csrf, require_permission
 from services.knowledge_contracts import (
     IndexBuildFailedError,
     InvalidKnowledgeInputError,
@@ -88,18 +87,11 @@ def _handle(exc: Exception):
     return HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "服务内部错误"})
 
 
-def _identity(user_id: str) -> str:
-    try:
-        return get_container().identity_resolver.resolve(user_id)
-    except IdentityError:
-        raise HTTPException(status_code=403, detail={
-            "code": "ACCESS_DENIED", "message": "身份校验失败，归属不符",
-        })
-
-
-def _ser():
+def _ser(identity: dict):
     c = get_container()
-    return c.knowledge_management, c.knowledge_publish, c.knowledge_service
+    store_id = int(identity["active_store"]["store_id"])
+    kb, mgmt, pub = c.get_knowledge_bundle(store_id)
+    return mgmt, pub, kb
 
 
 # ---------------- 文档 ----------------
@@ -108,11 +100,11 @@ def _ser():
 def list_documents(status: Optional[str] = None, category: Optional[str] = None,
                    keyword: Optional[str] = None,
                    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-                   user_id: str = "default_user"):
+                   user_id: str = "default_user",
+                   identity=Depends(require_permission("view_knowledge"))):
     """按状态/分类/关键词分页查询文档。"""
-    _identity(user_id)
     try:
-        mgmt, _, _ = _ser()
+        mgmt, _, _ = _ser(identity)
         return mgmt.list_documents(status=status, category=category, keyword=keyword,
                                    page=page, page_size=page_size)
     except KnowledgeError as exc:
@@ -122,15 +114,16 @@ def list_documents(status: Optional[str] = None, category: Optional[str] = None,
 
 
 @router.post("/documents", status_code=201)
-def create_document(body: DocumentCreate):
+def create_document(body: DocumentCreate,
+                    identity=Depends(require_permission("publish_knowledge")),
+                    _csrf=Depends(require_csrf)):
     """创建草稿。"""
-    identity = _identity(body.user_id)
     try:
-        mgmt, _, _ = _ser()
+        mgmt, _, _ = _ser(identity)
         return mgmt.create_document(
             title=body.title, content=body.content, category=body.category,
             keywords=body.keywords, source_type="manual", source_label=body.source_label,
-            created_by=identity,
+            created_by=str(identity["actor"]["actor_id"]),
         )
     except KnowledgeError as exc:
         raise _handle(exc)
@@ -139,11 +132,11 @@ def create_document(body: DocumentCreate):
 
 
 @router.get("/documents/{doc_id}")
-def get_document(doc_id: int, user_id: str = "default_user"):
+def get_document(doc_id: int, user_id: str = "default_user",
+                 identity=Depends(require_permission("view_knowledge"))):
     """查看文档与版本。"""
-    _identity(user_id)
     try:
-        mgmt, _, _ = _ser()
+        mgmt, _, _ = _ser(identity)
         return mgmt.get_document(doc_id)
     except KnowledgeError as exc:
         raise _handle(exc)
@@ -152,14 +145,16 @@ def get_document(doc_id: int, user_id: str = "default_user"):
 
 
 @router.put("/documents/{doc_id}")
-def update_document(doc_id: int, body: DocumentUpdate):
+def update_document(doc_id: int, body: DocumentUpdate,
+                    identity=Depends(require_permission("publish_knowledge")),
+                    _csrf=Depends(require_csrf)):
     """更新草稿或待发布版本；已发布文档编辑后降为草稿。"""
-    identity = _identity(body.user_id)
     try:
-        mgmt, _, _ = _ser()
+        mgmt, _, _ = _ser(identity)
         return mgmt.update_document(
             doc_id, title=body.title, content=body.content, category=body.category,
-            keywords=body.keywords, source_label=body.source_label, updated_by=identity,
+            keywords=body.keywords, source_label=body.source_label,
+            updated_by=str(identity["actor"]["actor_id"]),
         )
     except KnowledgeError as exc:
         raise _handle(exc)
@@ -168,14 +163,12 @@ def update_document(doc_id: int, body: DocumentUpdate):
 
 
 @router.post("/documents/{doc_id}/preview")
-async def preview_document(doc_id: int, body: Optional[SearchPreviewRequest] = None):
+async def preview_document(doc_id: int, body: Optional[SearchPreviewRequest] = None,
+                           identity=Depends(require_permission("view_knowledge"))):
     """候选版本检索预览（仅该草稿 + 已发布；结果标记 preview:true）。"""
-    # 有请求体时必须校验其中的兼容 user_id，不能因预览接口缺少独立
-    # query 参数而绕过身份边界。
-    _identity(body.user_id if body is not None else "default_user")
     query = (body.query if body else None) or ""
     try:
-        _, _, kb = _ser()
+        _, _, kb = _ser(identity)
         rows = await kb.search_candidate(
             query, top_k=(body.top_k if body else 3),
             category=(body.category if body else None),
@@ -187,11 +180,12 @@ async def preview_document(doc_id: int, body: Optional[SearchPreviewRequest] = N
 
 
 @router.post("/documents/{doc_id}/publish")
-async def publish_document(doc_id: int, user_id: str = "default_user"):
+async def publish_document(doc_id: int, user_id: str = "default_user",
+                           identity=Depends(require_permission("publish_knowledge")),
+                           _csrf=Depends(require_csrf)):
     """校验、构建并发布。"""
-    _identity(user_id)
     try:
-        _, pub, _ = _ser()
+        _, pub, _ = _ser(identity)
         return await pub.publish_document(doc_id)
     except KnowledgeError as exc:
         raise _handle(exc)
@@ -200,12 +194,15 @@ async def publish_document(doc_id: int, user_id: str = "default_user"):
 
 
 @router.post("/documents/{doc_id}/archive")
-async def archive_document(doc_id: int, user_id: str = "default_user"):
+async def archive_document(doc_id: int, user_id: str = "default_user",
+                           identity=Depends(require_permission("publish_knowledge")),
+                           _csrf=Depends(require_csrf)):
     """幂等归档。"""
-    identity = _identity(user_id)
     try:
-        mgmt, _, _ = _ser()
-        return await mgmt.archive_document(doc_id, updated_by=identity)
+        mgmt, _, _ = _ser(identity)
+        return await mgmt.archive_document(
+            doc_id, updated_by=str(identity["actor"]["actor_id"])
+        )
     except KnowledgeError as exc:
         raise _handle(exc)
     except Exception as exc:
@@ -215,22 +212,23 @@ async def archive_document(doc_id: int, user_id: str = "default_user"):
 # ---------------- 刷新 ----------------
 
 @router.get("/refresh")
-def get_refresh(user_id: str = "default_user"):
+def get_refresh(user_id: str = "default_user",
+               identity=Depends(require_permission("view_knowledge"))):
     """查询刷新状态。"""
-    _identity(user_id)
     try:
-        _, pub, _ = _ser()
+        _, pub, _ = _ser(identity)
         return pub.refresh_status()
     except Exception as exc:
         raise _handle(exc)
 
 
 @router.post("/refresh")
-async def rebuild_index(user_id: str = "default_user"):
+async def rebuild_index(user_id: str = "default_user",
+                        identity=Depends(require_permission("publish_knowledge")),
+                        _csrf=Depends(require_csrf)):
     """重建当前发布索引（归档/恢复后对账，不改变语料知识版本）。"""
-    _identity(user_id)
     try:
-        _, pub, _ = _ser()
+        _, pub, _ = _ser(identity)
         return await pub.refresh()
     except KnowledgeError as exc:
         raise _handle(exc)
@@ -241,11 +239,11 @@ async def rebuild_index(user_id: str = "default_user"):
 # ---------------- 管理检索预览 ----------------
 
 @router.post("/search/preview")
-async def search_preview(body: SearchPreviewRequest):
+async def search_preview(body: SearchPreviewRequest,
+                         identity=Depends(require_permission("view_knowledge"))):
     """管理检索预览：可在候选（已发布 + 指定草稿）上检索，结果标记 preview。"""
-    _identity(body.user_id)
     try:
-        _, _, kb = _ser()
+        _, _, kb = _ser(identity)
         rows = await kb.search_candidate(
             body.query, top_k=body.top_k, category=body.category,
             include_draft_ids=body.include_draft_ids or [],

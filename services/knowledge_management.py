@@ -40,6 +40,10 @@ class KnowledgeManagementService:
         self._kb = knowledge_service
         self._repo = knowledge_service.db
 
+    @property
+    def _store_id(self) -> int:
+        return self._kb.store_id
+
     # ---------------- 查询 ----------------
 
     def list_documents(self, status: Optional[str] = None, category: Optional[str] = None,
@@ -49,21 +53,23 @@ class KnowledgeManagementService:
             raise InvalidKnowledgeInputError(f"未知状态: {status}")
         page = max(1, int(page))
         page_size = max(1, min(100, int(page_size)))
-        rows = self._repo.list_documents(status=status, category=category, keyword=keyword)
+        rows = self._repo.list_documents(
+            status=status, category=category, keyword=keyword, store_id=self._store_id
+        )
         total = len(rows)
         start = (page - 1) * page_size
         items = [self._to_contract(r).to_dict() for r in rows[start:start + page_size]]
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     def get_document(self, doc_id: int) -> Dict[str, Any]:
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         return self._to_contract(doc).to_dict()
 
     def get_version(self, doc_id: int) -> Dict[str, Any]:
         """版本查询：返回文档版本信息与可发布状态（不返回正文全文）。"""
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         return {
@@ -92,19 +98,22 @@ class KnowledgeManagementService:
             title=title, status=KnowledgeStatus.DRAFT.value,
             source_type=source_type, source_label=source_label,
             created_by=created_by, document_version=1,
+            store_id=self._store_id,
         )
         return self.get_document(doc_id)
 
     def update_document(self, doc_id, *, title=None, content=None, category=None,
                         keywords=None, source_type=None, source_label=None,
                         updated_by: Optional[str] = "operator") -> Dict[str, Any]:
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         current = KnowledgeStatus(doc["status"])
         # 发布态直接编辑：先降为草稿（编辑副本），不再作为正式依据直到重新发布。
         if current == KnowledgeStatus.PUBLISHED:
-            self._repo.update_document(int(doc_id), status=KnowledgeStatus.DRAFT.value)
+            self._repo.update_document(
+                int(doc_id), status=KnowledgeStatus.DRAFT.value, store_id=self._store_id
+            )
             current = KnowledgeStatus.DRAFT
         elif current == KnowledgeStatus.ARCHIVED and content is not None:
             raise InvalidKnowledgeInputError("归档文档不可编辑正文（可用恢复后编辑）")
@@ -124,12 +133,12 @@ class KnowledgeManagementService:
             kwargs["source_type"] = source_type
         if source_label is not None:
             kwargs["source_label"] = source_label
-        self._repo.update_document(int(doc_id), **kwargs)
+        self._repo.update_document(int(doc_id), store_id=self._store_id, **kwargs)
         return self.get_document(int(doc_id))
 
     async def archive_document(self, doc_id, updated_by: Optional[str] = "operator") -> Dict[str, Any]:
         """归档：published/draft -> archived，并从正式索引移除；幂等。"""
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         current = KnowledgeStatus(doc["status"])
@@ -140,13 +149,14 @@ class KnowledgeManagementService:
         self._repo.update_document(
             int(doc_id), status=KnowledgeStatus.ARCHIVED.value,
             archived_at=datetime.now(timezone.utc), updated_by=updated_by,
+            store_id=self._store_id,
         )
         await self._kb._build_vector_index()  # 归档项移出正式索引
         return self.get_document(int(doc_id))
 
     def publish_prepare(self, doc_id: int) -> Dict[str, Any]:
         """发布准备校验（F2）：仅校验可发布性，不构建索引（构建在 F3）。"""
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         current = KnowledgeStatus(doc["status"])
@@ -166,7 +176,7 @@ class KnowledgeManagementService:
 
     def restore_document(self, doc_id: int, updated_by: Optional[str] = "operator") -> Dict[str, Any]:
         """恢复：archived -> draft（可再编辑/发布后正式上线）。"""
-        doc = self._repo.get_document(int(doc_id))
+        doc = self._repo.get_document(int(doc_id), store_id=self._store_id)
         if not doc:
             raise KnowledgeNotFoundError(f"知识文档不存在: {doc_id}")
         current = KnowledgeStatus(doc["status"])
@@ -174,6 +184,7 @@ class KnowledgeManagementService:
         self._repo.update_document(
             int(doc_id), status=KnowledgeStatus.DRAFT.value,
             updated_by=updated_by,
+            store_id=self._store_id,
         )
         return self.get_document(int(doc_id))
 

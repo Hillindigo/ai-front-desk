@@ -601,6 +601,17 @@
         let knowledgeData = [];
         let categories = [];
         let manageData = [];
+
+        // The session cookie remains HttpOnly; the separate CSRF cookie is
+        // only copied into the required request header and never persisted in
+        // localStorage or sent as an authentication credential.
+        function csrfToken() {
+            const item = document.cookie.split('; ').find(v => v.startsWith('admin_csrf='));
+            return item ? decodeURIComponent(item.substring('admin_csrf='.length)) : '';
+        }
+        function csrfHeaders(headers = {}) {
+            return {...headers, 'X-CSRF-Token': csrfToken()};
+        }
         
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -746,7 +757,9 @@
         }
 
         async function publishDoc(id) {
-            const resp = await fetch(`/api/v1/knowledge/documents/${id}/publish`, {method: 'POST'});
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}/publish`, {
+                method: 'POST', headers: csrfHeaders()
+            });
             const data = await resp.json();
             if (!resp.ok) { alert('发布失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
             else { alert('✅ 发布成功 版本 v' + data.document_version + '（知识库 v' + data.knowledge_version + '）'); }
@@ -755,7 +768,9 @@
 
         async function archiveDoc(id) {
             if (!confirm('确定归档该知识？归档后不再作为新的回答依据。')) return;
-            const resp = await fetch(`/api/v1/knowledge/documents/${id}/archive`, {method: 'POST'});
+            const resp = await fetch(`/api/v1/knowledge/documents/${id}/archive`, {
+                method: 'POST', headers: csrfHeaders()
+            });
             const data = await resp.json();
             if (!resp.ok) { alert('归档失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
             else { alert('✅ 已归档'); }
@@ -765,7 +780,7 @@
         async function restoreDoc(id) {
             // 恢复 = 更新接口将已归档转草稿（复用 PUT，不改内容）
             const resp = await fetch(`/api/v1/knowledge/documents/${id}`, {
-                method: 'PUT', headers: {'Content-Type': 'application/json'}, body: '{}',
+                method: 'PUT', headers: csrfHeaders({'Content-Type': 'application/json'}), body: '{}',
             });
             const data = await resp.json();
             if (!resp.ok) { alert('恢复失败：' + (data.detail?.message || JSON.stringify(data.detail))); }
@@ -829,11 +844,11 @@
             const category = document.getElementById('searchCategory').value;
             
             try {
-                const response = await fetch('/api/knowledge/search', {
+                const response = await fetch('/api/v1/knowledge/search/preview', {
                     method: 'POST',
-                    headers: {
+                    headers: csrfHeaders({
                         'Content-Type': 'application/json',
-                    },
+                    }),
                     body: JSON.stringify({
                         query: query,
                         top_k: topK,
@@ -842,7 +857,7 @@
                 });
                 
                 const data = await response.json();
-                displaySearchResults(data);
+                displaySearchResults({...data, total_found: (data.results || []).length});
                 
             } catch (error) {
                 console.error('搜索失败:', error);
@@ -872,8 +887,8 @@
                 <div class="knowledge-list">
                     ${data.results.map((doc, index) => `
                         <div class="knowledge-item search-result">
-                            <div class="knowledge-content">
-                                ${doc.content}
+                    <div class="knowledge-content">
+                                ${doc.content || doc.snippet || ''}
                                 <span class="score-badge">相似度: ${(doc.score || 0).toFixed(3)}</span>
                             </div>
                             <div class="knowledge-meta">
@@ -917,12 +932,13 @@
             const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
             
             try {
-                const response = await fetch('/api/knowledge', {
+                const response = await fetch('/api/v1/knowledge/documents', {
                     method: 'POST',
-                    headers: {
+                    headers: csrfHeaders({
                         'Content-Type': 'application/json',
-                    },
+                    }),
                     body: JSON.stringify({
+                        title: category,
                         content: content,
                         category: category,
                         keywords: keywords
@@ -986,9 +1002,7 @@
             try {
                 const response = await fetch(`/api/v1/knowledge/documents/${id}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: csrfHeaders({'Content-Type': 'application/json'}),
                     body: JSON.stringify({
                         content: content,
                         category: category,
@@ -1027,8 +1041,9 @@
             }
             
             try {
-                const response = await fetch(`/api/knowledge/${id}`, {
-                    method: 'DELETE'
+                const response = await fetch(`/api/v1/knowledge/documents/${id}/archive`, {
+                    method: 'POST',
+                    headers: csrfHeaders()
                 });
                 
                 const result = await response.json();

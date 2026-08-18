@@ -9,22 +9,24 @@ KnowledgeService 实例，与管理 API / 咨询链路共享同一索引。
 本接口保留旧契约（question+answer 拼接 content），仅做薄转发；迁移/删除条件
 记录于 Phase F F9 交接。
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import logging
 from typing import List
 from pydantic import BaseModel
+from api.admin_auth import require_csrf, require_permission
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["知识库管理"])
 
 
-async def _shared_service():
-    """从应用容器取单一 KnowledgeService（不存在则惰性构建，确保已初始化）。"""
+async def _shared_service(identity):
+    """从当前管理员的 active_store 取得隔离的 KnowledgeService。"""
     from api.chat_handler import get_container
     container = get_container()
-    await container.initialize()
-    return container.knowledge_service
+    store_id = int(identity["active_store"]["store_id"])
+    knowledge_service, _, _ = container.get_knowledge_bundle(store_id)
+    return knowledge_service
 
 
 class KnowledgeItem(BaseModel):
@@ -39,10 +41,10 @@ class SearchRequest(BaseModel):
 
 
 @router.get("/")
-async def get_all_knowledge():
+async def get_all_knowledge(identity=Depends(require_permission("view_knowledge"))):
     """获取所有知识条目"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
         entries = knowledge_service.get_all_documents()
 
         # 安全获取categories，避免出错
@@ -63,10 +65,11 @@ async def get_all_knowledge():
 
 
 @router.get("/{knowledge_id}")
-async def get_knowledge(knowledge_id: int):
+async def get_knowledge(knowledge_id: int,
+                        identity=Depends(require_permission("view_knowledge"))):
     """获取特定知识条目"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
         entry = knowledge_service.get_document(knowledge_id)
         if not entry:
             raise HTTPException(status_code=404, detail="知识条目不存在")
@@ -78,10 +81,12 @@ async def get_knowledge(knowledge_id: int):
 
 
 @router.post("/")
-async def add_knowledge(item: KnowledgeItem):
+async def add_knowledge(item: KnowledgeItem,
+                        identity=Depends(require_permission("publish_knowledge")),
+                        _csrf=Depends(require_csrf)):
     """添加新的知识条目（F2：改用共享实例；保存为草稿，不自动上线）"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
         # 将问答组合成文档内容
         content = f"问题: {item.question}\n答案: {item.answer}"
         result = await knowledge_service.add_document(
@@ -89,7 +94,7 @@ async def add_knowledge(item: KnowledgeItem):
             category=item.category,
             title=item.question,
             source_type="legacy_api",
-            created_by="operator",
+            created_by=str(identity["actor"]["actor_id"]),
         )
         return {"status": "success", "message": "知识条目添加成功", "data": result}
     except Exception as e:
@@ -97,10 +102,12 @@ async def add_knowledge(item: KnowledgeItem):
 
 
 @router.put("/{knowledge_id}")
-async def update_knowledge(knowledge_id: int, item: KnowledgeItem):
+async def update_knowledge(knowledge_id: int, item: KnowledgeItem,
+                           identity=Depends(require_permission("publish_knowledge")),
+                           _csrf=Depends(require_csrf)):
     """更新知识条目"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
         # 将问答组合成文档内容
         content = f"问题: {item.question}\n答案: {item.answer}"
         result = await knowledge_service.update_document(
@@ -119,10 +126,12 @@ async def update_knowledge(knowledge_id: int, item: KnowledgeItem):
 
 
 @router.delete("/{knowledge_id}")
-async def delete_knowledge(knowledge_id: int):
+async def delete_knowledge(knowledge_id: int,
+                           identity=Depends(require_permission("publish_knowledge")),
+                           _csrf=Depends(require_csrf)):
     """删除知识条目"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
         result = await knowledge_service.delete_document(knowledge_id)
         if not result:
             raise HTTPException(status_code=404, detail="知识条目不存在")
@@ -134,10 +143,12 @@ async def delete_knowledge(knowledge_id: int):
 
 
 @router.post("/search")
-async def search_knowledge(request: SearchRequest):
+async def search_knowledge(request: SearchRequest,
+                           identity=Depends(require_permission("view_knowledge"))):
     """搜索知识库"""
     try:
-        knowledge_service = await _shared_service()
+        knowledge_service = await _shared_service(identity)
+        await knowledge_service.initialize()
         results = await knowledge_service.search(request.query)
         return {"status": "success", "data": results, "count": len(results)}
     except Exception as e:

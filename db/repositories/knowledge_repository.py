@@ -138,7 +138,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
 
     def list_documents(self, status: Optional[str] = None,
                        category: Optional[str] = None,
-                       keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+                       keyword: Optional[str] = None,
+                       store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """按状态/分类/关键词过滤列出文档（Phase F F2：分页由服务层做）。
 
         keyword 匹配标题或正文（包含匹配，大小写不敏感）。
@@ -151,6 +152,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
                 query = query.filter(KnowledgeDocument.status == status)
             if category:
                 query = query.filter(KnowledgeDocument.category == category)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
             documents = query.all()
             rows = [self._document_to_dict(doc) for doc in documents]
         if keyword:
@@ -193,9 +196,10 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             更新是否成功
         """
         with self.session_manager.session_scope() as session:
-            document = session.query(KnowledgeDocument).filter(
-                KnowledgeDocument.id == doc_id
-            ).first()
+            query = session.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            document = query.first()
             
             if not document:
                 return False
@@ -229,12 +233,14 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             document.updated_at = datetime.utcnow()
             return True
 
-    def restore_document_state(self, doc_id: int, state: Dict[str, Any]) -> bool:
+    def restore_document_state(self, doc_id: int, state: Dict[str, Any],
+                               store_id: Optional[int] = None) -> bool:
         """恢复发布前的完整文档状态，允许显式恢复 NULL 字段。"""
         with self.session_manager.session_scope() as session:
-            document = session.query(KnowledgeDocument).filter(
-                KnowledgeDocument.id == doc_id
-            ).first()
+            query = session.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            document = query.first()
             if not document:
                 return False
             for field in (
@@ -247,7 +253,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             document.updated_at = datetime.utcnow()
             return True
 
-    def delete_document(self, doc_id: int, soft_delete: bool = True) -> bool:
+    def delete_document(self, doc_id: int, soft_delete: bool = True,
+                        store_id: Optional[int] = None) -> bool:
         """
         删除文档（支持软删除）
         
@@ -259,9 +266,10 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             删除是否成功
         """
         with self.session_manager.session_scope() as session:
-            document = session.query(KnowledgeDocument).filter(
-                KnowledgeDocument.id == doc_id
-            ).first()
+            query = session.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            document = query.first()
             
             if not document:
                 return False
@@ -274,7 +282,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             
             return True
 
-    def search_documents_by_category(self, category: str) -> List[Dict[str, Any]]:
+    def search_documents_by_category(self, category: str,
+                                     store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         按分类搜索文档
         
@@ -285,14 +294,18 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             匹配的文档列表
         """
         with self.session_manager.session_scope() as session:
-            documents = session.query(KnowledgeDocument).filter(
+            query = session.query(KnowledgeDocument).filter(
                 KnowledgeDocument.category == category,
                 KnowledgeDocument.is_active == 1
-            ).all()
+            )
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            documents = query.all()
             
             return [self._document_to_dict(doc) for doc in documents]
 
-    def search_documents_by_keywords(self, keywords: List[str]) -> List[Dict[str, Any]]:
+    def search_documents_by_keywords(self, keywords: List[str],
+                                     store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         按关键词搜索文档
         
@@ -303,9 +316,10 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             匹配的文档列表
         """
         with self.session_manager.session_scope() as session:
-            documents = session.query(KnowledgeDocument).filter(
-                KnowledgeDocument.is_active == 1
-            ).all()
+            query = session.query(KnowledgeDocument).filter(KnowledgeDocument.is_active == 1)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            documents = query.all()
             
             # 简单的关键词匹配
             matched_docs = []
@@ -316,7 +330,8 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             
             return matched_docs
 
-    def search_documents_by_content(self, search_text: str) -> List[Dict[str, Any]]:
+    def search_documents_by_content(self, search_text: str,
+                                    store_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         按内容搜索文档
         
@@ -327,14 +342,17 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             匹配的文档列表
         """
         with self.session_manager.session_scope() as session:
-            documents = session.query(KnowledgeDocument).filter(
+            query = session.query(KnowledgeDocument).filter(
                 KnowledgeDocument.content.contains(search_text),
                 KnowledgeDocument.is_active == 1
-            ).all()
+            )
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            documents = query.all()
             
             return [self._document_to_dict(doc) for doc in documents]
 
-    def get_all_categories(self) -> List[str]:
+    def get_all_categories(self, store_id: Optional[int] = None) -> List[str]:
         """
         获取所有分类
         
@@ -342,13 +360,14 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             分类列表
         """
         with self.session_manager.session_scope() as session:
-            categories = session.query(KnowledgeDocument.category).filter(
-                KnowledgeDocument.is_active == 1
-            ).distinct().all()
+            query = session.query(KnowledgeDocument.category).filter(KnowledgeDocument.is_active == 1)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            categories = query.distinct().all()
             
             return [cat[0] for cat in categories]
 
-    def get_documents_count(self) -> int:
+    def get_documents_count(self, store_id: Optional[int] = None) -> int:
         """
         获取文档总数
         
@@ -356,11 +375,12 @@ class KnowledgeRepository(BaseKnowledgeRepository):
             活跃文档数量
         """
         with self.session_manager.session_scope() as session:
-            return session.query(KnowledgeDocument).filter(
-                KnowledgeDocument.is_active == 1
-            ).count()
+            query = session.query(KnowledgeDocument).filter(KnowledgeDocument.is_active == 1)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            return query.count()
 
-    def get_documents_by_category_count(self) -> Dict[str, int]:
+    def get_documents_by_category_count(self, store_id: Optional[int] = None) -> Dict[str, int]:
         """
         获取各分类的文档数量
         
@@ -370,35 +390,38 @@ class KnowledgeRepository(BaseKnowledgeRepository):
         with self.session_manager.session_scope() as session:
             from sqlalchemy import func
             
-            result = session.query(
+            query = session.query(
                 KnowledgeDocument.category,
                 func.count(KnowledgeDocument.id).label('count')
-            ).filter(
-                KnowledgeDocument.is_active == 1
-            ).group_by(KnowledgeDocument.category).all()
+            ).filter(KnowledgeDocument.is_active == 1)
+            if store_id is not None:
+                query = query.filter(KnowledgeDocument.store_id == store_id)
+            result = query.group_by(KnowledgeDocument.category).all()
             
             return {category: count for category, count in result}
 
     # ---------------- 语料元信息（Phase F F3） ----------------
 
-    def get_meta(self, key: str, default=None):
+    def get_meta(self, key: str, default=None, store_id: Optional[int] = None):
         """读取知识语料元信息键值。"""
         from ..models import KnowledgeMeta
         with self.session_manager.session_scope() as session:
-            row = session.query(KnowledgeMeta).filter(
-                KnowledgeMeta.key == key
-            ).first()
+            query = session.query(KnowledgeMeta).filter(KnowledgeMeta.key == key)
+            if store_id is not None:
+                query = query.filter(KnowledgeMeta.store_id == store_id)
+            row = query.first()
             return row.value if row else default
 
-    def set_meta(self, key: str, value) -> None:
+    def set_meta(self, key: str, value, store_id: Optional[int] = None) -> None:
         """写入/更新知识语料元信息键值。"""
         from ..models import KnowledgeMeta, datetime as _dt
         with self.session_manager.session_scope() as session:
-            row = session.query(KnowledgeMeta).filter(
-                KnowledgeMeta.key == key
-            ).first()
+            query = session.query(KnowledgeMeta).filter(KnowledgeMeta.key == key)
+            if store_id is not None:
+                query = query.filter(KnowledgeMeta.store_id == store_id)
+            row = query.first()
             if row is None:
-                session.add(KnowledgeMeta(key=key, value=value))
+                session.add(KnowledgeMeta(key=key, value=value, store_id=store_id))
             else:
                 row.value = value
                 row.updated_at = _dt.utcnow()

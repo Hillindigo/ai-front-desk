@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from api.chat_handler import ProcessUserInput_stream
-from api.admin_auth import get_current_admin
+from api.admin_auth import get_current_admin, require_permission
 import logging
 import inspect
 
@@ -63,17 +63,16 @@ async def user_behavior_page(
 @router.get("/knowledge", response_class=HTMLResponse, summary="知识库管理页面")
 async def knowledge_page(
     request: Request,
-    identity=Depends(get_current_admin),
+    identity=Depends(require_permission("view_knowledge")),
 ):
     """知识库管理页面"""
-    # 通过API层获取知识库数据
     try:
-        from api.knowledge import get_all_knowledge
-        
-        # 调用API层函数获取数据
-        knowledge_data = await get_all_knowledge()
-        documents = knowledge_data.get("documents", [])
-        categories = knowledge_data.get("categories", [])
+        from api.chat_handler import get_container
+        kb, _, _ = get_container().get_knowledge_bundle(
+            int(identity["active_store"]["store_id"])
+        )
+        documents = kb.get_all_documents()
+        categories = kb.get_all_categories()
         
         return _render_template("knowledge_management.html", {
             "request": request,
@@ -96,10 +95,10 @@ async def technician_page(
     """服务人员状态页面"""
     # 通过API层获取服务人员数据
     try:
-        from api.technician import get_all_technicians
-        
-        # 调用API层函数获取数据
-        technicians = await get_all_technicians()
+        from api.chat_handler import get_container
+        technicians = get_container().db_router.technicians.get_all_technicians(
+            store_id=int(identity["active_store"]["store_id"])
+        )
         
         return _render_template("technician.html", {
             "request": request,
@@ -119,14 +118,33 @@ async def technician_schedule_page(
 ):
     """服务人员排班页面"""
     try:
-        from api.technician import get_all_technicians_schedule_today
         from config.time_config import time_config
+        from api.chat_handler import get_container
         
         # 获取当前日期
         current_date = time_config.current_date_str()
         
-        # 通过API层获取所有服务人员的排班数据
-        schedules_data = await get_all_technicians_schedule_today()
+        container = get_container()
+        store_id = int(identity["active_store"]["store_id"])
+        technicians = container.db_router.technicians.get_all_technicians(store_id=store_id)
+        today = time_config.today()
+        schedules_data = []
+        for tech in technicians:
+            schedules = container.db_router.technicians.get_technician_schedules(
+                tech["id"], today
+            )
+            schedules_data.append({
+                "technician_id": tech["id"],
+                "technician_name": tech["name"],
+                "busy_periods": [
+                    {
+                        "start": s["start_time"].strftime("%H:%M"),
+                        "end": s["end_time"].strftime("%H:%M"),
+                        "appointment_id": s.get("appointment_id"),
+                    }
+                    for s in schedules if s.get("status") == "busy"
+                ],
+            })
         
         # 构建排班数据格式 - 直接使用API返回的数据
         schedule = []
@@ -165,17 +183,13 @@ async def admin_dashboard(
 ):
     """系统管理仪表板"""
     try:
-        # 通过API层获取系统状态信息
-        from api.knowledge import get_all_knowledge
-        from api.technician import get_all_technicians
-        
-        # 获取知识库数据
-        knowledge_data = await get_all_knowledge()
-        knowledge_count = knowledge_data.get("total_count", 0)
-        categories = knowledge_data.get("categories", [])
-        
-        # 获取服务人员数据
-        technicians = await get_all_technicians()
+        from api.chat_handler import get_container
+        container = get_container()
+        store_id = int(identity["active_store"]["store_id"])
+        knowledge_repo = container.db_router.knowledge
+        knowledge_count = knowledge_repo.get_documents_count(store_id=store_id)
+        categories = knowledge_repo.get_all_categories(store_id=store_id)
+        technicians = container.db_router.technicians.get_all_technicians(store_id=store_id)
         
         # 数据库信息
         db_info = {
@@ -211,19 +225,17 @@ async def database_admin_page(
 ):
     """数据库管理页面"""
     try:
-        # 通过API层获取数据库统计信息
-        from api.knowledge import get_all_knowledge
-        from api.technician import get_all_technicians
-        
-        # 获取知识库数据
-        knowledge_data = await get_all_knowledge()
-        
-        # 获取服务人员数据
-        technicians = await get_all_technicians()
+        from api.chat_handler import get_container
+        container = get_container()
+        store_id = int(identity["active_store"]["store_id"])
+        knowledge_repo = container.db_router.knowledge
+        knowledge_count = knowledge_repo.get_documents_count(store_id=store_id)
+        categories = knowledge_repo.get_all_categories(store_id=store_id)
+        technicians = container.db_router.technicians.get_all_technicians(store_id=store_id)
         
         stats = {
-            "knowledge_documents": knowledge_data.get("total_count", 0),
-            "categories": len(knowledge_data.get("categories", [])),
+            "knowledge_documents": knowledge_count,
+            "categories": len(categories),
             "technicians": len(technicians),
             "appointments": 0  # TODO: 通过API获取预约数量
         }

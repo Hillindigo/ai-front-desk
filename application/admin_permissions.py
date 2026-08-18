@@ -7,6 +7,7 @@ ADMIN_PERMISSIONS = frozenset(
     {
         "view_sessions",
         "manage_conversations",
+        "view_knowledge",
         "publish_knowledge",
         "manage_store",
         "write_appointments",
@@ -23,6 +24,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
         {
             "view_sessions",
             "manage_conversations",
+            "view_knowledge",
             "publish_knowledge",
             "manage_store",
             "write_appointments",
@@ -35,6 +37,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
         {
             "view_sessions",
             "manage_conversations",
+            "view_knowledge",
             "write_appointments",
             "read_customer_preferences",
         }
@@ -42,6 +45,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
     "viewer": frozenset(
         {
             "view_sessions",
+            "view_knowledge",
             "read_customer_preferences",
         }
     ),
