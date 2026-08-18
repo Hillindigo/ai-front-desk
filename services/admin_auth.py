@@ -19,6 +19,7 @@ from db.models import (
     AuditEvent,
     ConversationControl,
     ConversationControlEvent,
+    FollowUpTask,
     MerchantAccount,
     Store,
     StoreMembership,
@@ -103,6 +104,7 @@ class AdminAuthService:
             session.execute(delete(AuditEvent))
             session.execute(delete(ConversationControlEvent))
             session.execute(delete(ConversationControl))
+            session.execute(delete(FollowUpTask))
             session.execute(delete(StoreMembership))
             session.execute(delete(MerchantAccount))
 

@@ -319,6 +319,26 @@ class ConversationControlEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class FollowUpTask(Base):
+    """客户回访任务。"""
+
+    __tablename__ = "follow_up_tasks"
+
+    id = Column(String(64), primary_key=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    customer_user_id = Column(String(64), nullable=False, index=True)
+    assignee_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=True, index=True)
+    reason = Column(String(512), nullable=False)
+    due_at = Column(DateTime, nullable=True, index=True)
+    status = Column(String(24), nullable=False, default="open", index=True)
+    source_type = Column(String(32), nullable=True)
+    source_id = Column(String(128), nullable=True)
+    created_by = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class StoreMembership(Base):
     """商家账号到门店的角色关系。"""
 

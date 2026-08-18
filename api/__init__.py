@@ -29,6 +29,7 @@ from .admin_auth import router as admin_auth_router
 from .admin_config import router as admin_config_router
 from .admin_conversations import router as admin_conversations_router
 from .admin_appointments import router as admin_appointments_router
+from .admin_customers import router as admin_customers_router
 
 # 创建API路由列表（用于注册到FastAPI应用）
 api_routers = [
@@ -47,4 +48,5 @@ api_routers = [
     admin_config_router,
     admin_conversations_router,
     admin_appointments_router,
+    admin_customers_router,
 ]
