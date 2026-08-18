@@ -219,3 +219,20 @@ Phase G 已完成商家后台最小闭环：商家账号与客户身份分离、
 Phase H 完成买家 Web + 商家工作台闭环（分支 dev，未合并/未推送）：买家会话恢复与标签页隔离、咨询到预约主路径（会话级预约契约 `GET /conversations/{id}/appointment`）、商家接管/人工回复/恢复 AI（`ConversationControl` 三态 ai_active/human_active/awaiting_human + orchestrator `chat_control` 阻断 AI 防双重回复）、SSE `handoff_required` 事件、契约全局审计测试、响应式与可访问性。买家消息命中转人工意图进入待人工队列；人工消息 `message_type=human` 写入同一会话并产生控制事件与审计。阶段代码与证据见 `Refactoring-Plan/Phase-H/` 各阶段文档与提交。
 
 未完成或不冒充完成：生产级身份系统、PII/备份/多进程、真实模型质量、第三方渠道、生产部署高可用。Phase I 应在已记录的契约/事件/审计之上建设，不重新实现 Phase H 的 Web 主路径。
+
+## 11. Phase I 当前交接事实
+
+Phase I 完成安全、隐私、观测、评测与恢复底线（分支 dev，未合并/未推送）：
+
+- **配置门禁（I1-E1/D12）**：`config/settings.py` 用 `APP_ENV` 区分；生产缺 `ADMIN_SESSION_SECRET`/白名单 CORS（禁 `*`）/必要模型配置、或 fake/占位符密钥时，`create_app()` 抛 `ConfigError` 拒启。开发/测试默认 development 不门禁。模型配置校验在 `settings._model_issues`（惰性读 model_provider）。
+- **安全中间件（I1-E2）**：`api/core/security.py` 纯 ASGI 的 `SecurityHeadersMiddleware`（nosniff/Referrer/Frame/生产 HSTS/可选 CSP）与 `RateLimitMiddleware`（进程内滑动窗口，`reset_rate_limiters()` 供测试）；TrustedHost 由 `TRUSTED_HOSTS` 启用。**用纯 ASGI 而非 BaseHTTPMiddleware**，避免破坏 SSE 流式。
+- **Cookie（I1-E3）**：`_secure_cookie()` 生产强制 Secure；开发按 `ADMIN_COOKIE_SECURE`。会话/过期/撤销已有自动化测试。
+- **错误脱敏（I1-E4）**：`api/core/redact.py` 的 `redact()` 清扫 sk-/Bearer/密钥/长令牌；`api/core/exceptions.py` 通用 500 不向客户端泄漏堆栈/路径/密钥，新增 `RequestValidationError` 处理器（422 不回显输入值，统一 `detail.code=INVALID_INPUT`）。
+- **隐私（I2/D9/D10/D11）**：`services/customer_privacy.py` 仅商家侧（`manage_customer_data`=owner/manager）客户导出（短时一次性令牌）+ 删除/匿名化（dry-run 默认、`request_id` 幂等、改 `messages.content`/停偏好/失效摘要/去标识按钮文本），写 `privacy_deletion_registry`（防旧备份恢复后 PII 复活）。`scripts/cleanup.py` 默认 dry-run。PII 字典见 `Refactoring-Plan/Phase-I/PII-数据字典.md`。
+- **观测（I3）**：`application/run_log.py` RunRecorder（进程内环形缓冲+drop 计数），turns 端点 yield-through 埋点；`/health/live`(进程) 与 `/health/ready`(DB/迁移/知识版本，503 不伪健康) 分离；`/api/v1/admin/metrics` 在 Phase G 既有 `services/audit_metrics.py` 上追加 `run_metrics`（**勿再新增同前缀路由**）。
+- **知识一致性（I4-A）**：单实例 worker=1；`/health/ready` 暴露 `local_index_version`(knowledge_service.get_source_version) 与 DB `knowledge_version` 并算 `knowledge_stale`。**不承诺多进程（I4-B 未纳入）**。
+- **评测（I5）**：`evaluation/phase_i_eval.py` 四类（意图/字段/RAG/P0）Fake 离线，`manual_eval_pending=True`，真实模型/人工结果永远待验证。IntentRouter 在 `application/orchestrator.py`（不在 intent_rules）。
+- **备份（I6）**：`scripts/backup.py` 用 SQLite backup API 一致性备份 + sha256 manifest + PRAGMA 校验；restore 默认 dry-run。恢复后涉及已删除客户需按 `privacy_deletion_registry` 重放删除。
+- **当前分支 dev**：所有 Phase I 提交在 dev，未合并/未推送。顶层存在用户手工移动的 `Refactoring-Plan/8.17-*.md`→`All/` 未提交改动，注意不误提交。
+
+未完成：完整浏览器人工验收、真实模型/人工语义评测、服务端独立 request_id 贯穿、备份静态加密、多进程一致性。
