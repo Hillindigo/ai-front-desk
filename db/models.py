@@ -168,6 +168,73 @@ class KnowledgeMeta(Base):
     value = Column(JSON, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+# ============================================================
+# Phase G（G1）：商家身份、门店成员与服务端会话
+# ============================================================
+
+class MerchantAccount(Base):
+    """商家运营账号，与客户 user_id 完全分离。"""
+
+    __tablename__ = "merchant_accounts"
+    __table_args__ = (
+        Index("uq_merchant_accounts_username", "username", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(128), nullable=False)
+    password_hash = Column(String(512), nullable=False)
+    display_name = Column(String(128), nullable=False)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Store(Base):
+    """商家门店实体；G2 将业务事实逐步回填到该边界。"""
+
+    __tablename__ = "stores"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    timezone = Column(String(64), nullable=False, default="Asia/Shanghai")
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StoreMembership(Base):
+    """商家账号到门店的角色关系。"""
+
+    __tablename__ = "store_memberships"
+    __table_args__ = (
+        Index("uq_store_memberships_actor_store", "actor_id", "store_id", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    actor_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=False, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    role = Column(String(24), nullable=False)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AdminSession(Base):
+    """可撤销的服务端商家会话；数据库不保存原始 session/csrf token。"""
+
+    __tablename__ = "admin_sessions"
+
+    id = Column(String(64), primary_key=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    csrf_token_hash = Column(String(64), nullable=False)
+    actor_id = Column(Integer, ForeignKey("merchant_accounts.id"), nullable=False, index=True)
+    active_store_id = Column(Integer, ForeignKey("stores.id"), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
 class UserBehavior(Base):
     __tablename__ = 'user_behaviors'
     id = Column(Integer, primary_key=True)

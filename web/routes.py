@@ -3,11 +3,12 @@ Web界面路由
 
 处理前端页面渲染和聊天功能
 """
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from api.chat_handler import ProcessUserInput_stream
+from api.admin_auth import get_current_admin
 import logging
 import inspect
 
@@ -52,12 +53,18 @@ async def chat_stream_endpoint(chat: ChatRequest):
     return StreamingResponse(token_generator(), media_type="text/plain")
 
 @router.get("/user_behavior", response_class=HTMLResponse, summary="用户行为分析页面")
-async def user_behavior_page(request: Request):
+async def user_behavior_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """用户行为分析页面"""
     return _render_template("user_behavior_analysis.html", {"request": request})
 
 @router.get("/knowledge", response_class=HTMLResponse, summary="知识库管理页面")
-async def knowledge_page(request: Request):
+async def knowledge_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """知识库管理页面"""
     # 通过API层获取知识库数据
     try:
@@ -82,7 +89,10 @@ async def knowledge_page(request: Request):
         })
 
 @router.get("/technician", response_class=HTMLResponse, summary="服务人员状态页面")
-async def technician_page(request: Request):
+async def technician_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """服务人员状态页面"""
     # 通过API层获取服务人员数据
     try:
@@ -103,7 +113,10 @@ async def technician_page(request: Request):
         })
 
 @router.get("/technician_schedule", response_class=HTMLResponse, summary="服务人员排班页面")
-async def technician_schedule_page(request: Request):
+async def technician_schedule_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """服务人员排班页面"""
     try:
         from api.technician import get_all_technicians_schedule_today
@@ -138,12 +151,18 @@ async def technician_schedule_page(request: Request):
         })
 
 @router.get("/user_behavior_analysis", response_class=HTMLResponse, summary="用户行为分析页面")
-async def user_behavior_analysis_page(request: Request):
+async def user_behavior_analysis_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """用户行为分析页面"""
     return _render_template("user_behavior_analysis.html", {"request": request})
 
 @router.get("/admin", response_class=HTMLResponse, summary="系统管理页面")
-async def admin_dashboard(request: Request):
+async def admin_dashboard(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """系统管理仪表板"""
     try:
         # 通过API层获取系统状态信息
@@ -180,7 +199,10 @@ async def admin_dashboard(request: Request):
         })
 
 @router.get("/admin/database", response_class=HTMLResponse, summary="数据库管理页面")
-async def database_admin_page(request: Request):
+async def database_admin_page(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
     """数据库管理页面"""
     try:
         # 通过API层获取数据库统计信息
