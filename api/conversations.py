@@ -152,14 +152,31 @@ async def send_turn(conversation_id: str, request: TurnRequest):
     _resolve_session(conversation_id, request.user_id)
 
     from application.events import sse_frame
+    from application.contracts import EventType
 
     container = get_container()
+    recorder = container.run_recorder
 
     async def event_generator():
-        async for envelope in container.orchestrator.handle_turn(
-            conversation_id, request.user_id, request.message,
-            request_id=request.client_request_id,
-        ):
-            yield sse_frame(envelope)
+        entry = recorder.begin(
+            conversation_id, request_id=request.client_request_id, user_id=request.user_id,
+        )
+        outcome, category = "completed", None
+        try:
+            async for envelope in container.orchestrator.handle_turn(
+                conversation_id, request.user_id, request.message,
+                request_id=request.client_request_id,
+            ):
+                if envelope.type == EventType.RUN_FAILED:
+                    outcome = "failed"
+                    category = envelope.data.get("error") if envelope.data else "run_failed"
+                elif envelope.type == EventType.RUN_COMPLETED:
+                    outcome = "completed"
+                yield sse_frame(envelope)
+        except Exception:
+            outcome, category = "failed", "exception"
+            raise
+        finally:
+            recorder.end(entry, outcome=outcome, error_category=category)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

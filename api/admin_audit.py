@@ -40,4 +40,9 @@ def metrics(
     identity=Depends(require_permission("read_audit")),
     service: AuditMetricsService = Depends(get_audit_metrics_service),
 ):
-    return service.metrics(_store_id(identity))
+    # Phase I I3-E13：在既有指标上追加进程内 Agent 运行摘要（标注 process 范围）
+    from api.chat_handler import get_container
+
+    result = service.metrics(_store_id(identity))
+    result["run_metrics"] = {**get_container().run_recorder.summary(), "scope": "process"}
+    return result

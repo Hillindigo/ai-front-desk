@@ -57,6 +57,11 @@ class Container:
 
         self.behavior_recorder = behavior_recorder or BehaviorRecorder()
 
+        # Phase I I3：进程内 Agent 运行记录（埋点不阻塞主业务）
+        from application.run_log import RunRecorder
+
+        self.run_recorder = RunRecorder()
+
         # 会话专属 Agent 工厂（默认使用 chat_handler 的实现，惰性避免循环导入）
         if agent_factory is None:
             from api.chat_handler import get_task_agent_for as _default_agent_factory
