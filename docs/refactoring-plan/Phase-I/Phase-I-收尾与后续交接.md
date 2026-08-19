@@ -7,14 +7,14 @@
 ## 1. 阶段已交付（I1–I7）
 
 | 任务 | 交付 | 证据 |
-|---|---|---|
-| I1 安全 | 生产配置门禁（拒启）、安全响应头+受信Host+限流、Cookie/会话加固、错误脱敏、越权回归 | `tests/test_phase_i_security.py` |
-| I2 隐私 | 商家侧客户导出（短时令牌）、删除/匿名化+删除登记(D10)、保留/清理脚本、PII 数据字典 | `tests/test_phase_i_privacy.py`、`PII-数据字典.md`、`scripts/cleanup.py` |
-| I3 观测 | /health live+ready、RunRecorder 埋点、门店指标、阈值文档 | `tests/test_phase_i_observability.py`、`指标与阈值.md` |
-| I4 知识一致性 | 单实例门禁与版本 health、stale 标记、部署限制 | `tests/test_phase_i_knowledge_consistency.py`、`部署与单实例限制.md` |
-| I5 评测 | 四类评测运行器（意图/字段/RAG/P0）、Fake/真实/人工分栏 | `tests/test_phase_i_evaluation.py`、`evaluation/phase_i_eval.py` |
-| I6 可靠性 | 一致性备份+校验+恢复、重启恢复、幂等确认演练 | `tests/test_phase_i_reliability.py`、`scripts/backup.py` |
-| I7 部署收尾 | 干净环境验收测试、运维手册、生产示例 env | `tests/test_phase_i_acceptance.py`、`Phase-I-运维手册.md`、`.env.production.example` |
+| --- | --- | --- |
+| I1 安全 | 生产配置门禁（拒启）、安全响应头+受信Host+限流、Cookie/会话加固、错误脱敏、越权回归 | `tests/security/test_phase_i_security.py` |
+| I2 隐私 | 商家侧客户导出（短时令牌）、删除/匿名化+删除登记(D10)、保留/清理脚本、PII 数据字典 | `tests/privacy/test_phase_i_privacy.py`、`PII-数据字典.md`、`scripts/cleanup.py` |
+| I3 观测 | /health live+ready、RunRecorder 埋点、门店指标、阈值文档 | `tests/integration/test_phase_i_observability.py`、`指标与阈值.md` |
+| I4 知识一致性 | 单实例门禁与版本 health、stale 标记、部署限制 | `tests/integration/test_phase_i_knowledge_consistency.py`、`部署与单实例限制.md` |
+| I5 评测 | 四类评测运行器（意图/字段/RAG/P0）、Fake/真实/人工分栏 | `tests/acceptance/test_phase_i_evaluation.py`、`evaluation/phase_i_eval.py` |
+| I6 可靠性 | 一致性备份+校验+恢复、重启恢复、幂等确认演练 | `tests/integration/test_phase_i_reliability.py`、`scripts/backup.py` |
+| I7 部署收尾 | 干净环境验收测试、运维手册、生产示例 env | `tests/acceptance/test_phase_i_acceptance.py`、`Phase-I-运维手册.md`、`.env.production.example` |
 
 **阶段间全量回归**：每阶段全量 `python -m pytest -q` 保持全绿（从 427 基线增长至 470+）。
 

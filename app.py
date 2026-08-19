@@ -4,6 +4,14 @@ FastAPI应用程序
 主应用程序入口，配置中间件、路由和异常处理
 自动初始化知识库和服务人员数据
 """
+from pathlib import Path
+import sys
+
+# Keep the existing top-level package imports working after the source layout move.
+SRC_DIR = Path(__file__).resolve().parent / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware

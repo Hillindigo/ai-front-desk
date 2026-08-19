@@ -40,6 +40,10 @@ logs/
 
 # --- Tests / coverage ---
 .pytest_cache/
+artifacts/
+_acceptance_pytest_*/
+_phase*-*/
+.pi/
 .coverage
 .coverage.*
 htmlcov/

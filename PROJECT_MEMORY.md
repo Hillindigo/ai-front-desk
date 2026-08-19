@@ -1,238 +1,188 @@
 # AI Front Desk 项目记忆
 
-> 最后更新：2026-08-17
-> 适用范围：项目结构、重构阶段、工程规则、已知问题和验证边界
-> 详细施工内容以 `Refactoring-Plan/Phase-*` 下的阶段文档为准；本文件记录长期有效的项目事实和工作约束。
+> 最后更新：2026-08-18
+> 适用范围：项目定位、稳定架构事实、工程约定、验证边界和长期风险。
+> 本文件不是阶段日志，也不是当前工作区状态报告。
 
 ## 1. 项目定位
 
-AI Front Desk 是一个面向线下服务门店的本地优先 FastAPI 原型，目标是把咨询、预约、排班、知识库、客户行为和回访串成一条可验证的 Agent 工作流。
+AI Front Desk 是面向线下服务门店的本地优先 FastAPI 原型。它把咨询、预约、服务人员排班、知识库、客户偏好、回访和人工接管组织成一条可验证的 Agent 工作流。
 
-当前产品形态：
+当前产品形态是模块化单体，适合本地演示、架构学习和二次开发，不应描述为已经具备生产级多租户、完整身份系统、商业级高可用或真实模型质量保证。
+
+主要能力：
 
 - Web 页面：Jinja2 模板、原生 HTML/CSS/JavaScript。
 - API：FastAPI + Uvicorn。
 - Agent：任务分类、咨询、预约、用户行为分析。
-- 数据：SQLAlchemy + SQLite，默认位于 `data/`。
-- 知识库：FAISS / Embedding，本地索引由知识服务管理。
-- 测试：Pytest，默认使用 Fake LLM / Fake Embedding，不依赖真实模型 API。
+- 数据：SQLAlchemy + SQLite，默认本地数据位于 `data/`。
+- 知识库：FAISS / Embedding，由知识服务管理本地索引。
+- 测试：Pytest，默认使用 Fake LLM / Fake Embedding，避免真实 API 调用。
 
-项目当前仍是原型和重构中的模块化单体，不应把现有能力描述为已完成的生产级多租户系统、完整记忆系统或可靠预约平台。
-
-## 2. 当前状态快照
-
-### 2.1 Git 状态
-
-- 当前仓库：`D:\1_qiuzhao\AIFrontDesk`
-- 当前分支：`dev`
-- 工作区：2026-08-17 检查时干净
-- 远程：`origin=https://github.com/Hillindigo/ai-front-desk.git`
-- Phase A 基线：tag `phase-a-baseline`
-- `main` 指向 Phase A 基线；`dev` 包含基线之后的项目文档流程提交。
-
-### 2.2 阶段文档索引
-
-阶段状态、阶段归档结果、测试证据和下一阶段交接事项不在本文件展开记录，统一放在：
+## 2. 当前目录职责
 
 ```text
-Refactoring-Plan/Phase-A/
-Refactoring-Plan/Phase-B/
-Refactoring-Plan/Phase-C/
-Refactoring-Plan/Phase-D/
-Refactoring-Plan/Phase-E/
-Refactoring-Plan/Phase-F/
+src/
+├── agents/          # Agent、任务分类和领域交互流程
+├── api/             # FastAPI 路由、请求/响应模型和 API 适配
+├── application/     # 会话运行时、编排、上下文、事件和依赖容器
+├── config/          # 设置、模型提供商、数据库和共享配置
+├── db/              # SQLAlchemy 模型、迁移、数据库路由和 Repository
+└── services/        # 预约、知识库、客户、推荐、审计等领域服务
+web/                 # 页面路由、模板和静态资源
+tests/               # 自动化测试；按 acceptance/integration/privacy/security 分类
+evaluation/          # AI 与知识库离线评测
+docs/refactoring-plan/ # 阶段计划、执行记录、证据和交接文档
+scripts/             # 备份、清理、迁移等运维脚本
+assets/              # 架构图等项目资源
+artifacts/           # 本地测试运行产物，不提交 Git
+app.py               # FastAPI 启动入口
 ```
 
-本文件只保留跨阶段长期有效的项目规则；具体阶段文档必须记录实际状态、验证结果和遗留问题。
+源码内部仍使用 `from agents...`、`from api...`、`from services...` 等顶层包导入。根入口 `app.py` 和 `pytest.ini` 负责把 `src/` 加入 Python 路径；整理目录时必须保持这个兼容约定，除非专门执行导入路径迁移。
 
-## 3. 代码边界与当前架构
-
-当前主要调用方向：
+主要调用方向：
 
 ```text
-Web / API
-    ↓
-Agents
-    ↓
-Services
-    ↓
-Repositories / Database
+Web → API → Application / Agents / Services → Repositories → Database
 ```
 
-主要目录职责：
+规则：页面不直接写数据库；Agent 不直接绕过领域服务写关键业务数据；API 负责协议和权限适配；领域状态迁移、冲突校验、幂等和持久化由 application/services/db 层负责。
 
-| 目录 | 职责 |
-|---|---|
-| `agents/` | 任务分类、咨询、预约、用户行为等 Agent 及其处理流程 |
-| `api/` | FastAPI 接口、请求模型、响应模型和聊天处理入口 |
-| `config/` | 设置、模型提供商、数据库、全局常量和时间配置 |
-| `db/` | SQLAlchemy 模型、数据库路由、会话管理和 Repository |
-| `services/` | 知识库、预约、服务人员、推荐、用户行为等业务服务 |
-| `web/` | 页面路由、模板和静态资源 |
-| `tests/` | Agent 测试、API 契约测试和行为组件测试 |
-| `Refactoring-Plan/` | 整体路线、阶段计划、执行记录和验证材料 |
+## 3. 必须保持的架构事实
 
-当前必须记住的实现事实：
+### 会话与编排
 
-1. 聊天链路已按会话运行（Phase B）：`api/chat_handler.py` 通过 `ConversationSession/SessionManager` 按 `conversation_id` 管理会话、消息持久化与并发锁；`/chat/stream` 是兼容包装，无 ID 时落到默认演示会话。
-2. 统一编排（Phase D）：`application/orchestrator.py` 的 `ConversationOrchestrator.handle_turn` 是唯一轮次编排入口（校验会话→落用户消息→`IntentRouter` 分类→工作流→落 assistant 消息）；`application/container.py` 为依赖容器；`application/intent_rules.py` 是确定性意图规则表（规则优先，LLM 只兜底模糊输入）。
-3. 事件协议（Phase D）：`/api/v1/conversations/{id}/turns` 返回 SSE 事件流（`protocol_version: v1`），一次 turns = 一个 `run_id`，`run_started` 首发、唯一 `run_completed`/`run_failed` 终止；事件只描述当前轮次，跨轮状态由持久化草稿/预约实体承载；`[THOUGHT]`/`[REPLY]`/`[SIGNAL]` 不进入事件流。
-4. `config/constants.py` 中的 `busy_periods_dict` 是进程级共享状态，已弃用（Phase C 后新主流程不再写入/读取），保留定义仅为兼容导出。
-5. 预约已领域化（Phase C）：独立 `Appointment`/`AppointmentEvent` 表、显式状态机（draft→pending_confirmation→confirmed / cancelled / expired）、`BEGIN IMMEDIATE` 事务内冲突校验与幂等键；`Agent` 通过领域服务完成预约，不再直接写 `technician_schedules` 或 `busy_periods_dict`。
-6. SQLite 事务使用自定义方言 `sqlite+immediate`（`db/base/immediate_dialect.py`）：所有事务 `BEGIN IMMEDIATE` 写锁抢占，防并发确认 lost update。
-7. 数据库层同时存在 Repository、Router 和兼容层（`TechnicianDBRouter` 仅剩 A-R2 user_behavior 组件使用），后续需要按阶段删除重复入口，不能只叠加新层。
-8. 知识库索引仍由进程内服务管理，知识变更会触发重建；后续先解决可靠性和验证边界，不直接引入超出当前规模的复杂基础设施。
-9. 内部技术字段仍使用 `technician`，产品文案优先使用“服务人员”；除非阶段计划明确迁移，不要随意修改数据库字段命名。
-10. 统一上下文（Phase E）：`application/context_builder.py` 的 `ContextBuilder` 是唯一上下文装配器（只读、无副作用、固定优先级预算裁剪）；数据来自只读读取器（`application/context_readers.py`）；`ContextPackage.model_input()` 只输出允许公开字段，审计字段不泄漏到模型输入。
-11. 会话摘要与偏好（Phase E）：`conversation_summaries`（按消息 sequence 覆盖、active/invalidated/failed、版本递增）；`preferences` + `preference_tombstones`（同一 user_id+type 单 active 覆盖语义）。删除偏好 = 单事务：停用偏好 + 写墓碑 + 该用户摘要失效 + 来源消息 metadata 置 `context_excluded` 屏蔽。旧 `user_preferences` 经 `migrate_legacy()` 迁移为 `legacy_unverified`（默认不注入，重新确认才提升）。
-12. 身份边界（Phase E）：`application/identity.py` 的 `IdentityResolver` 抽象 + `DemoIdentityResolver`（本地演示固定 `default_user`，请求体 user_id 只作兼容字段必须一致）。偏好 API `/api/v1/preferences` 走此边界；后续真实鉴权只替换 resolver。
-13. 知识检索（Phase E）：`KnowledgeService` 设 `min_score`（默认 0.5）阈值、候选边界、关键词预过滤；索引以 (index, doc_ids, version) 快照原子替换，`source_version` 随重建递增，旧结果不作当前证据；`search_structured()` 输出结构化证据供上下文。
-14. 知识治理（Phase F）：`KnowledgeDocument` 增 `title/status/draft|published|archived|failed/document_version/knowledge_version/source_type/source_label/created_by/updated_by/published_at/archived_at`；`db/migrations.py` 幂等补列+回填旧行为 published（legacy）。容器唯一持有单一 `KnowledgeService`（`application/container.py`，`initialize()` 一次性构建索引；管理/咨询/发布共享），旧 `/api/knowledge` 与 `api/knowledge_v1.py` 均从容器取实例，未定义 `app` 已修复。发布流水线 `services/knowledge_publish.py`：候选索引构建成功→提交 DB→原子交换；失败保留旧快照并标 failed；语料 `knowledge_version` 持久化 `knowledge_meta`（重启恢复），`source_version=index-N`。咨询只依据通过阈值的 `RetrievedEvidence`（`application/workflows.py` ConsultationWorkflow），无依据确定性降级拒答；证据元数据写入 assistant 消息（`/api/v1/conversations/{id}/sources` 供前端来源卡片）；`[THOUGHT]/[SIGNAL]` 不泄漏。评测集/运行器在 `evaluation/`（`python -m evaluation.run_knowledge_eval`），真实模型质量永远 pending。单进程锁发布，多进程未完成；真实管理员鉴权、审核、审计、门店隔离移交 Phase G。
+- `application/orchestrator.py` 的 `ConversationOrchestrator.handle_turn` 是规范的单轮编排入口。
+- `application/container.py` 是共享依赖容器；知识服务、会话运行时和相关领域服务应从容器获得，避免同一进程创建互相不一致的实例。
+- `/api/v1/conversations/{id}/turns` 是规范会话接口；`/chat/stream` 是兼容入口。
+- 会话、消息和跨轮业务状态必须持久化；不能只依赖 Python 进程内存、Prompt 或摘要。
 
-## 4. 重构目标和长期原则
+### 事件协议
 
-重构目标不是增加更多 Agent，而是逐步获得：
+- turns 接口返回 SSE，协议版本为 `v1`。
+- 一次 turns 请求对应一个 `run_id`；`run_started` 首发，最后只能有一个 `run_completed` 或 `run_failed`。
+- 事件只描述当前轮次；跨轮预约状态由持久化草稿和预约实体承载。
+- `[THOUGHT]`、`[REPLY]`、`[SIGNAL]` 等内部标记不能进入用户可见事件或错误响应。
+- 错误码和事件字段属于 API 契约，修改前必须检查对应契约测试和兼容入口。
 
-- 每个用户/会话拥有独立且可恢复的状态。
-- LLM 负责理解和生成，确定性代码负责业务校验、状态迁移和数据写入。
-- 预约、排班、确认、取消和改约具备明确的状态与事务边界。
-- 消息、工作流状态、客户偏好和摘要有清晰的数据边界。
-- API、流式事件、错误码、日志和测试契约稳定可追踪。
-- 每个阶段结束系统仍然能启动、测试和演示。
-- 保持模块化单体，不为当前个人项目过早引入微服务和复杂记忆基础设施。
+### 预约领域
 
-长期原则：
+- 预约使用独立领域实体和状态机：`draft → pending_confirmation → confirmed`，也可进入 `cancelled` 或 `expired`。
+- 创建、确认、取消和改约必须经过领域服务，不能由 Agent 或页面直接写排班表。
+- 时间冲突使用半开区间 `[start, end)`；相邻预约不冲突。
+- 并发确认使用 SQLite `BEGIN IMMEDIATE` 事务边界；需要幂等的写操作必须支持并验证 `idempotency_key`。
+- `busy_periods_dict` 是历史兼容导出，不是新主流程的事实来源。
 
-1. 先保证状态、数据和边界正确，再追求模型能力。
-2. Agent 可以理解、建议和编排，但关键业务动作必须经过确定性校验。
-3. 结构化业务事实不能只保存在 Prompt、聊天摘要或 Python 进程内存中。
-4. 先删后建：每个阶段都要识别可删除的兼容层和重复入口。
-5. 前端跟随后端同步做最小改动，不能把前端兼容问题留到最后。
-6. 每个阶段必须有明确的完成定义、自动化验证和运行证据。
-7. 未验证的事项只能标记为“待验证”或“已知风险”，不能标记为已完成。
+### 上下文、摘要与偏好
 
-## 5. 阶段目录和阶段管理规则
+- `application/context_builder.py` 是统一上下文装配器，必须保持只读、固定优先级和预算裁剪。
+- 当前输入、活跃预约和待确认动作不能被普通上下文裁剪丢弃。
+- 偏好删除必须同时停用偏好、写墓碑、使相关摘要失效，并屏蔽来源消息的上下文使用。
+- `DemoIdentityResolver` 只代表本地演示身份；请求体中的 `user_id` 不能被当作生产权限来源。
 
-阶段文档统一放在 `Refactoring-Plan/` 下，并为每个阶段建立独立目录：
+### 知识库与回答可信度
 
-```text
-Refactoring-Plan/
-├── All/                         # 整体路线图
-├── Phase-A/                     # Phase A 计划、执行记录、验证材料
-├── Phase-B/                     # Phase B 计划、执行记录、验证材料
-├── Phase-C/
-├── Phase-D/
-├── Phase-E/
-└── ...
+- 只有 `published` 文档进入正式索引；草稿、失败和归档文档不能作为正式回答依据。
+- 索引以快照方式构建和原子替换；构建失败时保留上一份可用快照。
+- 检索结果必须通过最低相关度阈值并携带文档、分数和索引版本等证据元数据。
+- 没有可靠证据时应确定性拒答或降级，不能让模型编造价格、地址、营业政策或服务承诺。
+- 当前可靠性边界是单实例/单进程；不要声称多进程知识索引一致性已经解决。
+
+### 身份、安全与隐私
+
+- 本地演示身份和生产身份必须明确区分；不能用固定演示用户、客户端 `user_id` 或未签名字段替代服务端身份。
+- 商家后台写操作需要服务端会话、权限检查和 CSRF 保护；请求体中的角色、门店和用户字段不是权限来源。
+- 生产配置必须拒绝 fake/占位模型、弱会话密钥、通配 CORS 等不安全配置。
+- 错误、日志、指标、页面和模型输入不能泄露密钥、令牌、完整 PII 或内部堆栈。
+- 客户导出、删除、匿名化和备份恢复必须考虑删除登记，避免旧备份恢复后 PII 复活。
+
+## 4. 工程规则
+
+### 修改前
+
+1. 先检查当前分支、工作区和目标文件的现有改动。
+2. 不覆盖、重置或清理用户已有改动。
+3. 先确认改动属于哪个模块和阶段；无明确阶段时不要擅自扩大范围。
+4. 保持现有 API、数据库字段和兼容入口，除非任务明确要求迁移。
+
+### 修改时
+
+- 优先使用现有领域服务、Repository、契约和测试，不重复创建平行入口。
+- 关键业务状态使用确定性代码校验；LLM 只负责理解、抽取、生成或建议。
+- 新增兼容层时必须说明退出条件；不能无限叠加旧入口。
+- 不把临时测试目录、真实数据、密钥、模型输出或个人工作区信息写入项目记忆。
+- 阶段文档使用真实路径、命令和证据；历史记录不要伪装成当前状态。
+
+### Git
+
+- `main` 用于稳定阶段成果，`dev` 用于日常开发、修复和联调。
+- 未经用户明确授权，不合并、不推送、不宣称已部署。
+- 合并、推送、线上部署和线上验收是三个不同事实，必须分别说明。
+- 提交应围绕一个独立事项；项目既有阶段提交格式以阶段文档为准。
+
+## 5. 验证规则
+
+事实按证据分级：
+
+- **代码事实**：当前源码、配置或数据库结构直接证明的内容。
+- **本地验证**：当前机器实际执行命令得到的结果。
+- **阶段记录**：阶段文档记录的历史结果，未重新运行时不能当作当前验证。
+- **推断**：根据代码得到的风险或建议，必须明确标注。
+- **待验证**：没有足够证据，不得使用“已完成”“生产可用”等肯定表述。
+
+最低要求：
+
+1. 修改代码后运行直接相关测试。
+2. 阶段收尾运行 `python -m pytest -q`，记录 passed、skipped、failed 和重要 warnings。
+3. 需要启动服务时验证实际 HTTP 端点，不只检查进程是否启动。
+4. 生产、鉴权、浏览器和真实模型质量不能用 Fake 测试、源码检查或未鉴权页面替代。
+5. 使用 Fake 模型时确认没有真实 LLM/Embedding 请求。
+
+常用命令：
+
+```bash
+python -m pytest -q
+python -c "import app; print('app import ok')"
 ```
 
-阶段规则：
+## 6. 长期已知限制
 
-1. 新阶段开始前，必须审查上一阶段的完成记录、遗留问题、跳过测试和未验证事项。
-2. 当前阶段计划必须先列出前阶段遗留问题，并写明修复策略、优先级、影响范围和验收标准。
-3. 阶段计划、执行记录和验证结果放在同一个阶段目录中，不能只依赖聊天记录。
-4. 一个阶段完成后，必须更新阶段状态、验证证据、剩余风险和下一阶段交接事项。
-5. 不得因为代码已经修改或测试数量增加，就自动把阶段标记为完成；必须满足该阶段的 Done 定义。
-6. 阶段内出现范围扩大时，应先更新计划并说明原因，不能无记录地把额外任务混入当前阶段。
-7. 阶段文档应引用实际文件路径、测试命令和结果；推测性内容必须明确标注为假设。
+以下能力不能被测试通过或本地可启动自动推断为已完成：
 
-## 6. Git 和提交规则
+- 完整桌面/移动浏览器人工验收。
+- 真实模型语义质量和人工评测。
+- 生产级身份系统、复杂多租户和外部渠道接入。
+- 多进程知识索引一致性。
+- 备份静态加密、密钥分离和完整恢复演练。
+- 服务端独立 `request_id` 的全链路贯穿。
+- 商业级高可用、性能、成本和线上运维证明。
 
-### 分支职责
+这些事项的具体计划、证据和交接状态必须写入对应的 `docs/refactoring-plan/Phase-*/` 文档，而不是在本文件展开成阶段日志。
 
-- `main`：稳定分支，只接收已经完成测试的阶段成果，不做日常开发。
-- `dev`：日常功能开发、修复、重构和联调分支。
+## 7. 本文件应该写什么
 
-### 开始修改前
+应该写能够在未来多次工作中持续有效的内容：
 
-1. 先检查当前分支和工作区状态。
-2. 保留已有未提交改动，不执行会覆盖、清理或重置用户改动的操作。
-3. 确认当前任务范围和阶段归属。
+- 项目定位、技术边界和非目标。
+- 目录职责、模块调用方向和关键入口。
+- 数据状态机、事件协议、权限边界、兼容策略等不变量。
+- 修改代码时必须遵守的工程规则。
+- 测试默认环境和不能被测试替代的验收边界。
+- 已确认且长期存在的技术债务和风险。
+- 未来代理容易误解、但必须保持的历史兼容约定。
 
-### 合并和推送
+## 8. 本文件不应该写什么
 
-- 只有用户明确要求“合并并推送”时，才将 `dev` 合并到本地 `main`。
-- 合并使用 `git merge --no-ff dev`，合并后在 `main` 再跑全量测试。
-- 未经明确授权不得自行合并、推送或宣称已部署。
-- Git push 成功不等于线上部署成功；工作流、部署平台和线上/鉴权验收必须分别报告。
+不应该写只对某一次工作或某个时间点有效的内容：
 
-### Commit 规则
+- 当前分支、当前 commit、工作区是否干净、是否已推送等 Git 快照。
+- 某次全量测试的具体数量、耗时、warning 数量或临时日志。
+- 某次会话中的待办、执行进度、工具调用过程和中间结论。
+- Phase A/B/C 等阶段的详细交付表、测试证据和逐项交接记录。
+- 临时目录、缓存目录、SQLite 测试数据库和本地工具生成文件。
+- 真实客户数据、访问令牌、API Key、个人路径或机器专属配置。
+- README 中已经完整说明的用户使用教程和全部 API 清单。
+- 未经验证的推测、宣传性结论或“测试通过所以生产可用”的表述。
 
-格式：
-
-```text
-Phase X(类型)-标题
-```
-
-- 标题是一句话总结，不超过 15 个字。
-- 类型包括 `feat`、`fix`、`docs`、`refactor`、`test`、`style`、`perf`、`build`、`ci`、`chore`、`revert`、`security`。
-- 一个提交围绕一个独立的大块事项，不把无关改动混在一起。
-- Bug 修复和新功能尽量分开提交。
-- 不因为阶段提交规则而提交整个工作区中无关的文件。
-
-示例：
-
-```text
-Phase A(test)-建立FakeLLM测试基线
-Phase A(security)-CORS来源配置化
-Phase B(feat)-会话隔离与消息持久化
-```
-
-## 7. 验证和事实标注规则
-
-所有结论按证据边界区分：
-
-- **代码事实**：由当前源码、配置或数据库结构直接确认。
-- **本地验证**：当前机器执行命令得到的结果。
-- **阶段归档结果**：阶段文档记录的历史结果，除非重新运行，不等于当前环境可复现。
-- **推断**：根据代码和计划推导出的风险或建议，必须标记为推断。
-- **未知/待验证**：当前没有足够证据，不能用肯定语气表述。
-
-最低验证要求：
-
-1. 修改代码后运行与改动直接相关的测试。
-2. 阶段收尾运行项目全量测试，并记录通过、跳过、失败和警告。
-3. 需要启动服务时验证实际 HTTP 端点，而不只验证进程是否启动。
-4. 需要生产或鉴权行为时，不能用本地构建、Git 引用或未鉴权重定向代替线上验收。
-5. 测试依赖 Fake 模型时，必须确认没有真实 LLM/Embedding 请求。
-
-## 8. 更新本文件的触发条件
-
-以下变化发生时，必须同步更新本文件：
-
-- 阶段状态、阶段目录结构或完成定义发生变化。
-- Git 分支、合并、推送或提交规则发生变化。
-- 核心架构边界、数据模型或 API 兼容策略发生变化。
-- Phase 遗留问题被修复、延期、重新分级或发现新的阻塞问题。
-- 测试入口、依赖环境或验证方式发生变化。
-
-## 9. Phase G 当前交接事实
-
-Phase G 已完成商家后台最小闭环：商家账号与客户身份分离、服务端会话/CSRF、RBAC、门店 scope、默认门店迁移、按门店知识服务实例、结构化门店配置、会话人工接管、预约管理适配、客户回访任务、审计查询、基础运营指标和鉴权后台壳层。阶段代码与测试证据以 `Refactoring-Plan/Phase-G/Phase-G-收尾与H-I交接.md` 及各阶段提交为准。
-
-未完成或不冒充完成：生产密钥/部署加固、多进程知识索引一致性、PII 脱敏/导出/删除、备份清理、真实模型质量与人工评测、外部渠道接入、复杂后台交互和商业级可用性。
-
-本文件应记录稳定的项目知识，不替代具体 Phase 施工计划，也不记录未经验证的乐观结论。
-
-## 10. Phase H 当前交接事实
-
-Phase H 完成买家 Web + 商家工作台闭环（分支 dev，未合并/未推送）：买家会话恢复与标签页隔离、咨询到预约主路径（会话级预约契约 `GET /conversations/{id}/appointment`）、商家接管/人工回复/恢复 AI（`ConversationControl` 三态 ai_active/human_active/awaiting_human + orchestrator `chat_control` 阻断 AI 防双重回复）、SSE `handoff_required` 事件、契约全局审计测试、响应式与可访问性。买家消息命中转人工意图进入待人工队列；人工消息 `message_type=human` 写入同一会话并产生控制事件与审计。阶段代码与证据见 `Refactoring-Plan/Phase-H/` 各阶段文档与提交。
-
-未完成或不冒充完成：生产级身份系统、PII/备份/多进程、真实模型质量、第三方渠道、生产部署高可用。Phase I 应在已记录的契约/事件/审计之上建设，不重新实现 Phase H 的 Web 主路径。
-
-## 11. Phase I 当前交接事实
-
-Phase I 完成安全、隐私、观测、评测与恢复底线（分支 dev，未合并/未推送）：
-
-- **配置门禁（I1-E1/D12）**：`config/settings.py` 用 `APP_ENV` 区分；生产缺 `ADMIN_SESSION_SECRET`/白名单 CORS（禁 `*`）/必要模型配置、或 fake/占位符密钥时，`create_app()` 抛 `ConfigError` 拒启。开发/测试默认 development 不门禁。模型配置校验在 `settings._model_issues`（惰性读 model_provider）。
-- **安全中间件（I1-E2）**：`api/core/security.py` 纯 ASGI 的 `SecurityHeadersMiddleware`（nosniff/Referrer/Frame/生产 HSTS/可选 CSP）与 `RateLimitMiddleware`（进程内滑动窗口，`reset_rate_limiters()` 供测试）；TrustedHost 由 `TRUSTED_HOSTS` 启用。**用纯 ASGI 而非 BaseHTTPMiddleware**，避免破坏 SSE 流式。
-- **Cookie（I1-E3）**：`_secure_cookie()` 生产强制 Secure；开发按 `ADMIN_COOKIE_SECURE`。会话/过期/撤销已有自动化测试。
-- **错误脱敏（I1-E4）**：`api/core/redact.py` 的 `redact()` 清扫 sk-/Bearer/密钥/长令牌；`api/core/exceptions.py` 通用 500 不向客户端泄漏堆栈/路径/密钥，新增 `RequestValidationError` 处理器（422 不回显输入值，统一 `detail.code=INVALID_INPUT`）。
-- **隐私（I2/D9/D10/D11）**：`services/customer_privacy.py` 仅商家侧（`manage_customer_data`=owner/manager）客户导出（短时一次性令牌）+ 删除/匿名化（dry-run 默认、`request_id` 幂等、改 `messages.content`/停偏好/失效摘要/去标识按钮文本），写 `privacy_deletion_registry`（防旧备份恢复后 PII 复活）。`scripts/cleanup.py` 默认 dry-run。PII 字典见 `Refactoring-Plan/Phase-I/PII-数据字典.md`。
-- **观测（I3）**：`application/run_log.py` RunRecorder（进程内环形缓冲+drop 计数），turns 端点 yield-through 埋点；`/health/live`(进程) 与 `/health/ready`(DB/迁移/知识版本，503 不伪健康) 分离；`/api/v1/admin/metrics` 在 Phase G 既有 `services/audit_metrics.py` 上追加 `run_metrics`（**勿再新增同前缀路由**）。
-- **知识一致性（I4-A）**：单实例 worker=1；`/health/ready` 暴露 `local_index_version`(knowledge_service.get_source_version) 与 DB `knowledge_version` 并算 `knowledge_stale`。**不承诺多进程（I4-B 未纳入）**。
-- **评测（I5）**：`evaluation/phase_i_eval.py` 四类（意图/字段/RAG/P0）Fake 离线，`manual_eval_pending=True`，真实模型/人工结果永远待验证。IntentRouter 在 `application/orchestrator.py`（不在 intent_rules）。
-- **备份（I6）**：`scripts/backup.py` 用 SQLite backup API 一致性备份 + sha256 manifest + PRAGMA 校验；restore 默认 dry-run。恢复后涉及已删除客户需按 `privacy_deletion_registry` 重放删除。
-- **当前分支 dev**：所有 Phase I 提交在 dev，未合并/未推送。顶层存在用户手工移动的 `Refactoring-Plan/8.17-*.md`→`All/` 未提交改动，注意不误提交。
-
-未完成：完整浏览器人工验收、真实模型/人工语义评测、服务端独立 request_id 贯穿、备份静态加密、多进程一致性。
+阶段细节放在 `docs/refactoring-plan/Phase-*/`；用户使用方式放在 `README.md`；一次性执行结果放在对应测试/验收记录或 Git 提交中。

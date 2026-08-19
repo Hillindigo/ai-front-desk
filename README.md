@@ -28,7 +28,7 @@ AI Front Desk 将这些工作拆成可组合的专业 Agent：
 
 ## 系统架构
 
-![AI Front Desk architecture](architecture.svg)
+![AI Front Desk architecture](assets/architecture.svg)
 
 ```text
 Web / Application
@@ -218,14 +218,20 @@ event: run_completed    data: {"conversation_id":"...","message_id":"...","inten
 
 ```text
 ai-front-desk/
-├── application/            # 会话运行时（ConversationSession/SessionManager/消息缓冲）
-├── agents/                 # 任务路由、咨询、预约和行为分析 Agent
-├── api/                    # 对外 API 与响应模型（含会话 API）
-├── config/                 # 设置、模型和数据库配置
-├── db/                     # SQLAlchemy 模型与 Repository
-├── services/               # 知识库、预约、推荐和行为服务
+├── src/                    # 业务源码
+│   ├── application/        # 会话运行时与工作流编排
+│   ├── agents/             # 任务路由、咨询、预约和行为分析 Agent
+│   ├── api/                # 对外 API 与响应模型
+│   ├── config/             # 设置、模型和数据库配置
+│   ├── db/                 # SQLAlchemy 模型与 Repository
+│   └── services/           # 知识库、预约、推荐和行为服务
 ├── web/                    # 页面路由、模板和静态资源
-├── tests/                  # Agent、契约、会话隔离与并发测试
+├── tests/                  # 自动化测试，按用途分为 acceptance/integration/privacy/security
+├── evaluation/             # AI 与知识库评测
+├── scripts/                # 备份、清理和迁移脚本
+├── docs/refactoring-plan/  # 整体路线和阶段文档
+├── assets/                 # 架构图等项目资源
+├── artifacts/test-runs/    # 历史验收运行产物（本地保留，不提交）
 ├── app.py                  # FastAPI 入口
 ├── requirements.txt        # Python 依赖
 └── .env.example            # 环境变量模板
