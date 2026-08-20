@@ -1,0 +1,16 @@
+[
+  {
+    "conversation_id": "massage-conv-001",
+    "user_id": "massage_customer_001",
+    "subject": "价格咨询",
+    "user_message": "肩颈放松多少钱？",
+    "assistant_message": "肩颈放松80元，时长30分钟。"
+  },
+  {
+    "conversation_id": "massage-conv-002",
+    "user_id": "massage_customer_002",
+    "subject": "预约咨询",
+    "user_message": "明天下午可以做深度放松吗？",
+    "assistant_message": "可以查询明天下午的可预约时段，请告诉我大概时间。"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "min_notice_minutes": 180,
+    "cancel_window_minutes": 180,
+    "late_rule": "首次护理建议提前15分钟到店；迟到超过15分钟可能需要调整项目时长。"
+  }
+]

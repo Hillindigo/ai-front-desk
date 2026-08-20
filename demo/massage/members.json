@@ -1,0 +1,20 @@
+[
+  {
+    "member_id": "M-MEMBER-001",
+    "user_id": "massage_customer_001",
+    "level": "黄金会员",
+    "points": 680,
+    "balance_yuan": 320,
+    "joined_at": "2026-01-15",
+    "status": "active"
+  },
+  {
+    "member_id": "M-MEMBER-002",
+    "user_id": "massage_customer_002",
+    "level": "普通会员",
+    "points": 120,
+    "balance_yuan": 80,
+    "joined_at": "2026-04-20",
+    "status": "active"
+  }
+]

@@ -1,0 +1,51 @@
+[
+  {
+    "weekday": 0,
+    "weekday_name": "周一",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 1,
+    "weekday_name": "周二",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 2,
+    "weekday_name": "周三",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 3,
+    "weekday_name": "周四",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 4,
+    "weekday_name": "周五",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 5,
+    "weekday_name": "周六",
+    "open_time": "09:00",
+    "close_time": "23:00",
+    "is_closed": 0
+  },
+  {
+    "weekday": 6,
+    "weekday_name": "周日",
+    "open_time": "09:00",
+    "close_time": "22:00",
+    "is_closed": 0
+  }
+]

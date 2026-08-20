@@ -1,0 +1,23 @@
+[
+  {
+    "staff_code": "B-STAFF-001",
+    "name": "顾悦",
+    "gender": "女",
+    "specialty": "补水护理、敏感肌修护",
+    "is_active": 1
+  },
+  {
+    "staff_code": "B-STAFF-002",
+    "name": "沈妍",
+    "gender": "女",
+    "specialty": "基础清洁、肩颈舒缓",
+    "is_active": 1
+  },
+  {
+    "staff_code": "B-STAFF-003",
+    "name": "许晴",
+    "gender": "女",
+    "specialty": "敏感肌修护、补水护理",
+    "is_active": 1
+  }
+]

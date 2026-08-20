@@ -1,0 +1,29 @@
+[
+  {
+    "inventory_code": "B-INV-001",
+    "name": "补水面膜",
+    "unit": "盒",
+    "quantity": 36,
+    "reorder_level": 10,
+    "unit_cost_yuan": 88,
+    "is_active": 1
+  },
+  {
+    "inventory_code": "B-INV-002",
+    "name": "舒缓精华",
+    "unit": "瓶",
+    "quantity": 18,
+    "reorder_level": 6,
+    "unit_cost_yuan": 128,
+    "is_active": 1
+  },
+  {
+    "inventory_code": "B-INV-003",
+    "name": "一次性美容床单",
+    "unit": "包",
+    "quantity": 45,
+    "reorder_level": 15,
+    "unit_cost_yuan": 42,
+    "is_active": 1
+  }
+]

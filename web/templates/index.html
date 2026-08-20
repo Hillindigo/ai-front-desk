@@ -1,866 +1,1117 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Front Desk - AI聊天机器人</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>AI Front Desk - AI聊天机器人</title>
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+            rel="stylesheet"
+        />
+        <style>
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0 0 0 0);
+                white-space: nowrap;
+                border: 0;
+            }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .chat-container { 
-            width: 90%;
-            max-width: 800px; 
-            height: 90vh;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 20px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            padding: 20px 30px;
-            color: white;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
-            animation: shimmer 3s infinite;
-        }
-        
-        @keyframes shimmer {
-            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
-        }
-        
-        .header-title {
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .header-subtitle {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-        
-        .nav-bar {
-            background: rgba(255,255,255,0.98);
-            padding: 15px 30px;
-            border-bottom: 1px solid rgba(0,0,0,0.05);
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
-        }
-        
-        .nav-btn { 
-            padding: 8px 16px;
-            border-radius: 25px;
-            border: none;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .nav-btn:hover { 
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-            background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
-        }
-        
-        .chat-content {
-            flex: 1;
-            padding: 20px 30px;
-            overflow-y: auto;
-            background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(248,250,252,0.9));
-            scroll-behavior: smooth;
-        }
-        
-        .chat-content::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .chat-content::-webkit-scrollbar-track {
-            background: rgba(0,0,0,0.05);
-            border-radius: 3px;
-        }
-        
-        .chat-content::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border-radius: 3px;
-        }
-        
-        .message { 
-            display: flex; 
-            margin-bottom: 20px; 
-            align-items: flex-end;
-            animation: messageSlide 0.3s ease;
-        }
-        
-        @keyframes messageSlide {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .message.user { 
-            flex-direction: row-reverse; 
-        }
-        
-        .avatar { 
-            width: 45px; 
-            height: 45px; 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .message.user .avatar {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-        }
-        
-        .message.bot .avatar {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-            color: white;
-        }
-        
-        .bubble { 
-            max-width: 75%; 
-            padding: 15px 20px; 
-            border-radius: 20px; 
-            font-size: 15px;
-            line-height: 1.5;
-            position: relative;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .message.user .bubble { 
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white; 
-            border-bottom-right-radius: 5px;
-        }
-        
-        .message.bot .bubble { 
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            color: #2c3e50; 
-            border-bottom-left-radius: 5px;
-            border: 2px solid rgba(79, 172, 254, 0.2);
-            font-weight: 500;
-        }
-        
-        /* 机器人回复中的特殊文本样式 */
-        .bot-reply {
-            color: #2c3e50;
-            font-weight: 600;
-        }
-        
-        .bot-thought {
-            color: #7f8c8d;
-            font-style: italic;
-            font-size: 14px;
-            opacity: 0.8;
-        }
-        
-        .bot-success {
-            color: #27ae60;
-            font-weight: 700;
-            background: linear-gradient(135deg, #d5f4e6 0%, #e8f8f5 100%);
-            padding: 10px 15px;
-            border-radius: 10px;
-            margin: 5px 0;
-            border-left: 4px solid #27ae60;
-        }
-        
-        .bot-error {
-            color: #e74c3c;
-            font-weight: 600;
-            background: linear-gradient(135deg, #fadbd8 0%, #f2d7d5 100%);
-            padding: 10px 15px;
-            border-radius: 10px;
-            margin: 5px 0;
-            border-left: 4px solid #e74c3c;
-        }
-        
-        .bot-info {
-            color: #3498db;
-            font-weight: 600;
-            background: linear-gradient(135deg, #d6eaf8 0%, #eaf4fd 100%);
-            padding: 10px 15px;
-            border-radius: 10px;
-            margin: 5px 0;
-            border-left: 4px solid #3498db;
-        }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
 
-        /* Phase E E7：记忆操作反馈（已记住/已删除/无法保存）高亮 */
-        .memory-feedback {
-            color: #6c3483;
-            font-weight: 700;
-            background: linear-gradient(135deg, #e8daef 0%, #f4ecf7 100%);
-            padding: 10px 15px;
-            border-radius: 10px;
-            margin: 5px 0;
-            border-left: 4px solid #6c3483;
-        }
-
-        .input-area {
-            padding: 20px 30px;
-            background: rgba(255,255,255,0.95);
-            border-top: 1px solid rgba(0,0,0,0.05);
-        }
-        
-        #chat-form { 
-            display: flex; 
-            gap: 15px;
-            align-items: center;
-        }
-        
-        #user-input { 
-            flex: 1; 
-            padding: 15px 20px; 
-            border-radius: 25px; 
-            border: 2px solid rgba(0,0,0,0.1); 
-            font-size: 15px;
-            background: white;
-            transition: all 0.3s ease;
-            outline: none;
-            resize: none;
-            max-height: 120px;
-            overflow-y: auto;
-        }
-        
-        #user-input:focus {
-            border-color: #4facfe;
-            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
-        }
-        
-        #user-input::placeholder {
-            color: #999;
-            opacity: 1;
-        }
-        
-        #send-btn { 
-            padding: 15px 25px; 
-            border-radius: 25px; 
-            border: none; 
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white; 
-            font-size: 15px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        #send-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4);
-        }
-        
-        #send-btn:active {
-            transform: translateY(0);
-        }
-        
-        .typing-indicator {
-            display: none;
-            padding: 15px 20px;
-            background: white;
-            border-radius: 20px;
-            margin: 10px 0;
-            border: 1px solid rgba(0,0,0,0.05);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .typing-dots {
-            display: inline-flex;
-            gap: 4px;
-        }
-        
-        .typing-dots span {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            animation: typing 1.4s infinite ease-in-out;
-        }
-        
-        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-        
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
-            30% { transform: translateY(-10px); opacity: 1; }
-        }
-        
-        @media (max-width: 768px) {
             body {
-                padding: 10px;
-            }
-            
-            .chat-container {
-                width: 100%;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 height: 100vh;
-                border-radius: 15px;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-            
-            .header, .nav-bar, .chat-content, .input-area {
-                padding-left: 20px;
-                padding-right: 20px;
+
+            .chat-container {
+                width: 90%;
+                max-width: 800px;
+                height: 90vh;
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(20px);
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.2);
             }
-            
-            .nav-bar {
-                justify-content: flex-start;
-                overflow-x: auto;
-                padding-bottom: 20px;
+
+            .header {
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                padding: 20px 30px;
+                color: white;
+                position: relative;
+                overflow: hidden;
             }
-            
-            .bubble {
-                max-width: 85%;
+
+            .header::before {
+                content: "";
+                position: absolute;
+                top: -50%;
+                left: -50%;
+                width: 200%;
+                height: 200%;
+                background: linear-gradient(
+                    45deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent
+                );
+                animation: shimmer 3s infinite;
             }
-            
+
+            @keyframes shimmer {
+                0% {
+                    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+                }
+                100% {
+                    transform: translateX(100%) translateY(100%) rotate(45deg);
+                }
+            }
+
             .header-title {
-                font-size: 20px;
+                font-size: 24px;
+                font-weight: 600;
+                margin-bottom: 10px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
             }
-            
+
             .header-subtitle {
+                font-size: 14px;
+                opacity: 0.9;
+            }
+
+            .nav-bar {
+                background: rgba(255, 255, 255, 0.98);
+                padding: 15px 30px;
+                border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                justify-content: center;
+            }
+
+            .nav-btn {
+                padding: 8px 16px;
+                border-radius: 25px;
+                border: none;
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                color: white;
                 font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                display: flex;
+                align-items: center;
+                gap: 5px;
             }
-        }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <!-- 头部区域 -->
-        <div class="header">
-            <div class="header-title">
-                <i class="fas fa-robot"></i>
-                AI Front Desk
-            </div>
-            <div class="header-subtitle">
-                AI Front Desk — 让线下服务门店的预约与运营更简单
-            </div>
-        </div>
-        
-        <!-- 导航栏 -->
-        <div class="nav-bar">
-            <button class="nav-btn" onclick="window.location.href='/user_behavior'">
-                <i class="fas fa-chart-line"></i>
-                用户行为分析
-            </button>
-            <button class="nav-btn" onclick="window.location.href='/knowledge'">
-                <i class="fas fa-database"></i>
-                知识库管理
-            </button>
-            <button class="nav-btn" onclick="window.location.href='/technician'">
-                <i class="fas fa-users"></i>
-                服务人员状态
-            </button>
-            <button class="nav-btn" onclick="window.location.href='/technician_schedule'">
-                <i class="fas fa-calendar-alt"></i>
-                服务人员排班
-            </button>
-            <button class="nav-btn" id="clear-btn">
-                <i class="fas fa-trash-alt"></i>
-                清空对话
-            </button>
-        </div>
-        
-        <!-- 聊天内容区域 -->
-        <div class="chat-content" id="chat-box">
-            <!-- 欢迎消息 -->
-            <div class="message bot">
-                <div class="avatar">
+
+            .nav-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+                background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+            }
+
+            .chat-content {
+                flex: 1;
+                padding: 20px 30px;
+                overflow-y: auto;
+                background: linear-gradient(
+                    to bottom,
+                    rgba(255, 255, 255, 0.9),
+                    rgba(248, 250, 252, 0.9)
+                );
+                scroll-behavior: smooth;
+            }
+
+            .chat-content::-webkit-scrollbar {
+                width: 6px;
+            }
+
+            .chat-content::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.05);
+                border-radius: 3px;
+            }
+
+            .chat-content::-webkit-scrollbar-thumb {
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                border-radius: 3px;
+            }
+
+            .message {
+                display: flex;
+                margin-bottom: 20px;
+                align-items: flex-end;
+                animation: messageSlide 0.3s ease;
+            }
+
+            @keyframes messageSlide {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .message.user {
+                flex-direction: row-reverse;
+            }
+
+            .avatar {
+                width: 45px;
+                height: 45px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 16px;
+                font-weight: 600;
+                margin: 0 15px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .message.user .avatar {
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                color: white;
+            }
+
+            .message.bot .avatar {
+                background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+                color: white;
+            }
+
+            .bubble {
+                max-width: 75%;
+                padding: 15px 20px;
+                border-radius: 20px;
+                font-size: 15px;
+                line-height: 1.5;
+                position: relative;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .message.user .bubble {
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                color: white;
+                border-bottom-right-radius: 5px;
+            }
+
+            .message.bot .bubble {
+                background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+                color: #2c3e50;
+                border-bottom-left-radius: 5px;
+                border: 2px solid rgba(79, 172, 254, 0.2);
+                font-weight: 500;
+            }
+
+            /* 机器人回复中的特殊文本样式 */
+            .bot-reply {
+                color: #2c3e50;
+                font-weight: 600;
+            }
+
+            .bot-thought {
+                color: #7f8c8d;
+                font-style: italic;
+                font-size: 14px;
+                opacity: 0.8;
+            }
+
+            .bot-success {
+                color: #27ae60;
+                font-weight: 700;
+                background: linear-gradient(135deg, #d5f4e6 0%, #e8f8f5 100%);
+                padding: 10px 15px;
+                border-radius: 10px;
+                margin: 5px 0;
+                border-left: 4px solid #27ae60;
+            }
+
+            .bot-error {
+                color: #e74c3c;
+                font-weight: 600;
+                background: linear-gradient(135deg, #fadbd8 0%, #f2d7d5 100%);
+                padding: 10px 15px;
+                border-radius: 10px;
+                margin: 5px 0;
+                border-left: 4px solid #e74c3c;
+            }
+
+            .bot-info {
+                color: #3498db;
+                font-weight: 600;
+                background: linear-gradient(135deg, #d6eaf8 0%, #eaf4fd 100%);
+                padding: 10px 15px;
+                border-radius: 10px;
+                margin: 5px 0;
+                border-left: 4px solid #3498db;
+            }
+
+            /* Phase E E7：记忆操作反馈（已记住/已删除/无法保存）高亮 */
+            .memory-feedback {
+                color: #6c3483;
+                font-weight: 700;
+                background: linear-gradient(135deg, #e8daef 0%, #f4ecf7 100%);
+                padding: 10px 15px;
+                border-radius: 10px;
+                margin: 5px 0;
+                border-left: 4px solid #6c3483;
+            }
+
+            .input-area {
+                padding: 20px 30px;
+                background: rgba(255, 255, 255, 0.95);
+                border-top: 1px solid rgba(0, 0, 0, 0.05);
+            }
+
+            #chat-form {
+                display: flex;
+                gap: 15px;
+                align-items: center;
+            }
+
+            #user-input {
+                flex: 1;
+                padding: 15px 20px;
+                border-radius: 25px;
+                border: 2px solid rgba(0, 0, 0, 0.1);
+                font-size: 15px;
+                background: white;
+                transition: all 0.3s ease;
+                outline: none;
+                resize: none;
+                max-height: 120px;
+                overflow-y: auto;
+            }
+
+            #user-input:focus {
+                border-color: #4facfe;
+                box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+            }
+
+            #user-input::placeholder {
+                color: #999;
+                opacity: 1;
+            }
+
+            #send-btn {
+                padding: 15px 25px;
+                border-radius: 25px;
+                border: none;
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                color: white;
+                font-size: 15px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            #send-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4);
+            }
+
+            #send-btn:active {
+                transform: translateY(0);
+            }
+
+            .typing-indicator {
+                display: none;
+                padding: 15px 20px;
+                background: white;
+                border-radius: 20px;
+                margin: 10px 0;
+                border: 1px solid rgba(0, 0, 0, 0.05);
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .typing-dots {
+                display: inline-flex;
+                gap: 4px;
+            }
+
+            .typing-dots span {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                animation: typing 1.4s infinite ease-in-out;
+            }
+
+            .typing-dots span:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .typing-dots span:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+
+            @keyframes typing {
+                0%,
+                60%,
+                100% {
+                    transform: translateY(0);
+                    opacity: 0.3;
+                }
+                30% {
+                    transform: translateY(-10px);
+                    opacity: 1;
+                }
+            }
+
+            @media (max-width: 768px) {
+                body {
+                    padding: 10px;
+                }
+
+                .chat-container {
+                    width: 100%;
+                    height: 100vh;
+                    border-radius: 15px;
+                }
+
+                .header,
+                .nav-bar,
+                .chat-content,
+                .input-area {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                }
+
+                .nav-bar {
+                    justify-content: flex-start;
+                    overflow-x: auto;
+                    padding-bottom: 20px;
+                }
+
+                .bubble {
+                    max-width: 85%;
+                }
+
+                .header-title {
+                    font-size: 20px;
+                }
+
+                .header-subtitle {
+                    font-size: 13px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="chat-container">
+            <!-- 头部区域 -->
+            <div class="header">
+                <div class="header-title">
                     <i class="fas fa-robot"></i>
+                    AI Front Desk
                 </div>
-                <div class="bubble">
-                    <div class="bot-info">
-                        👋 您好！我是AI Front Desk，很高兴为您服务！
-                    </div>
-                    <div class="bot-reply">
-                        我可以帮您：<br>
-                        • 🕐 预约服务项目<br>
-                        • 👨‍⚕️ 查询服务人员状态<br>
-                        • 📅 安排预约时间<br>
-                        • ❓ 解答相关问题
-                    </div>
-                    <div class="bot-success">
-                        请告诉我您需要什么帮助？
-                    </div>
+                <div class="header-subtitle">
+                    AI Front Desk — 让线下服务门店的预约与运营更简单
                 </div>
             </div>
-        </div>
-        
-        <!-- 打字指示器 -->
-        <div class="typing-indicator" id="typing-indicator" role="status" aria-live="polite">
-            <div class="typing-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-            <span style="margin-left: 10px; color: #666;">AI正在思考中...</span>
-        </div>
-        
-        <!-- 输入区域 -->
-        <div class="input-area">
-            <form id="chat-form">
-                <label for="user-input" class="sr-only">输入消息</label>
-                <input type="text" id="user-input" placeholder="请输入您的问题或需求..." autocomplete="off" required aria-label="输入消息">
-                <button id="send-btn" type="submit" aria-label="发送消息">
-                    <i class="fas fa-paper-plane" aria-hidden="true"></i>
-                    发送
+
+            <!-- 导航栏 -->
+            <div class="nav-bar">
+                <button
+                    class="nav-btn"
+                    onclick="window.location.href = '/user_behavior'"
+                >
+                    <i class="fas fa-chart-line"></i>
+                    用户行为分析
                 </button>
-            </form>
+                <button
+                    class="nav-btn"
+                    onclick="window.location.href = '/knowledge'"
+                >
+                    <i class="fas fa-database"></i>
+                    知识库管理
+                </button>
+                <button
+                    class="nav-btn"
+                    onclick="window.location.href = '/technician'"
+                >
+                    <i class="fas fa-users"></i>
+                    服务人员状态
+                </button>
+                <button
+                    class="nav-btn"
+                    onclick="window.location.href = '/technician_schedule'"
+                >
+                    <i class="fas fa-calendar-alt"></i>
+                    服务人员排班
+                </button>
+                <button
+                    class="nav-btn"
+                    onclick="
+                        window.location.href =
+                            'http://127.0.0.1:8002/admin/login'
+                    "
+                >
+                    <i class="fas fa-store"></i>
+                    商家后台
+                </button>
+                <button class="nav-btn" id="clear-btn">
+                    <i class="fas fa-trash-alt"></i>
+                    清空对话
+                </button>
+            </div>
+
+            <!-- 聊天内容区域 -->
+            <div class="chat-content" id="chat-box">
+                <!-- 欢迎消息 -->
+                <div class="message bot">
+                    <div class="avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="bubble">
+                        <div class="bot-info">
+                            👋 您好！我是AI Front Desk，很高兴为您服务！
+                        </div>
+                        <div class="bot-reply">
+                            我可以帮您：<br />
+                            • 🕐 预约服务项目<br />
+                            • 👨‍⚕️ 查询服务人员状态<br />
+                            • 📅 安排预约时间<br />
+                            • ❓ 解答相关问题
+                        </div>
+                        <div class="bot-success">请告诉我您需要什么帮助？</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 打字指示器 -->
+            <div
+                class="typing-indicator"
+                id="typing-indicator"
+                role="status"
+                aria-live="polite"
+            >
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span style="margin-left: 10px; color: #666"
+                    >AI正在思考中...</span
+                >
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="input-area">
+                <form id="chat-form">
+                    <label for="user-input" class="sr-only">输入消息</label>
+                    <input
+                        type="text"
+                        id="user-input"
+                        placeholder="请输入您的问题或需求..."
+                        autocomplete="off"
+                        required
+                        aria-label="输入消息"
+                    />
+                    <button id="send-btn" type="submit" aria-label="发送消息">
+                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                        发送
+                    </button>
+                </form>
+            </div>
         </div>
-    </div>
-    <script>
-const chatBox = document.getElementById('chat-box');
-const chatForm = document.getElementById('chat-form');
-const userInput = document.getElementById('user-input');
-const clearBtn = document.getElementById('clear-btn');
-const typingIndicator = document.getElementById('typing-indicator');
-let lastBotBubble = null;
+        <script>
+            const chatBox = document.getElementById("chat-box");
+            const chatForm = document.getElementById("chat-form");
+            const userInput = document.getElementById("user-input");
+            const clearBtn = document.getElementById("clear-btn");
+            const typingIndicator = document.getElementById("typing-indicator");
+            let lastBotBubble = null;
 
-// === Phase H H1：会话管理（标签页隔离 + 服务端恢复）===
-// sessionStorage 持有"当前标签页会话"，多个标签页互不串线；
-// localStorage 只作跨刷新/跨标签页的导航提示，不作为权限或业务事实来源。
-const TAB_KEY = 'chat_tab_session';
-const LS_RECENT = 'recent_conversation_id';
-let conversationId = sessionStorage.getItem(TAB_KEY) || null;
+            // === Phase H H1：会话管理（标签页隔离 + 服务端恢复）===
+            // sessionStorage 持有"当前标签页会话"，多个标签页互不串线；
+            // localStorage 只作跨刷新/跨标签页的导航提示，不作为权限或业务事实来源。
+            const TAB_KEY = "chat_tab_session";
+            const LS_RECENT = "recent_conversation_id";
+            let conversationId = sessionStorage.getItem(TAB_KEY) || null;
 
-// 当前待发送/待重试的状态
-let pending = null;            // {text} 失败待重试
-let connectionStatus = 'idle'; // 'idle' | 'sending'
+            // 当前待发送/待重试的状态
+            let pending = null; // {text} 失败待重试
+            let connectionStatus = "idle"; // 'idle' | 'sending'
 
-function persistConversation(id) {
-    conversationId = id;
-    sessionStorage.setItem(TAB_KEY, id);
-    localStorage.setItem(LS_RECENT, id); // 仅导航提示
-}
-
-async function ensureConversation() {
-    if (!conversationId) {
-        const res = await fetch('/api/v1/conversations', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({user_id: 'default_user', channel: 'web'})
-        });
-        if (!res.ok) throw new Error('创建会话失败: ' + res.status);
-        const data = await res.json();
-        persistConversation(data.conversation_id);
-    }
-    return conversationId;
-}
-
-async function newConversation() {
-    // 新建会话：创建新标签页会话 ID（原会话保留在服务端，不清除）
-    conversationId = null;
-    sessionStorage.removeItem(TAB_KEY);
-    await ensureConversation();
-    const welcome = chatBox.querySelector('.message.bot').cloneNode(true);
-    chatBox.innerHTML = '';
-    chatBox.appendChild(welcome);
-    lastBotBubble = null;
-    userInput.focus();
-}
-
-function addMessage(text, sender) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message ' + sender;
-    const avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    avatar.innerHTML = sender === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.innerHTML = text.replace(/\n/g, '<br>');
-    msgDiv.appendChild(avatar);
-    msgDiv.appendChild(bubble);
-    chatBox.appendChild(msgDiv);
-    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
-    if (sender === 'bot') lastBotBubble = bubble;
-}
-
-function showTypingIndicator() {
-    typingIndicator.style.display = 'block';
-    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
-}
-function hideTypingIndicator() {
-    typingIndicator.style.display = 'none';
-}
-
-function updateLastBotMessage(text) {
-    if (!lastBotBubble) return;
-    const reply = document.createElement('div');
-    const normalized = text || '';
-    if (normalized.indexOf('预约成功') >= 0 || normalized.indexOf('已为您预约') >= 0) {
-        reply.className = 'bot-success';
-        reply.textContent = '✅ ' + normalized;
-    } else if (normalized.indexOf('抱歉') >= 0 || normalized.indexOf('失败') >= 0 || normalized.indexOf('不空闲') >= 0) {
-        reply.className = 'bot-error';
-        reply.textContent = '❌ ' + normalized;
-    } else if (normalized.indexOf('请问') >= 0 || normalized.indexOf('需要') >= 0) {
-        reply.className = 'bot-info';
-        reply.textContent = '💬 ' + normalized;
-    } else {
-        reply.className = 'bot-reply';
-        reply.textContent = normalized;
-    }
-    lastBotBubble.replaceChildren(reply);
-    requestAnimationFrame(() => chatBox.scrollTo({top: chatBox.scrollHeight, behavior: 'smooth'}));
-}
-
-function markLastBotMessage(markerClass) {
-    if (!lastBotBubble) return;
-    const reply = lastBotBubble.querySelector('div:last-child') || lastBotBubble;
-    if (reply && !reply.classList.contains(markerClass)) reply.classList.add(markerClass);
-}
-
-// F6：渲染最近一条回答的来源卡片/无依据提示（从服务端读取，不伪造）
-async function loadTurnSources(convId) {
-    if (!lastBotBubble) return;
-    try {
-        const res = await fetch('/api/v1/conversations/' + convId + '/sources');
-        if (!res.ok) return;
-        const data = await res.json();
-        const msgEl = lastBotBubble.closest('.message');
-        if (!msgEl) return;
-        const old = msgEl.querySelector('.answer-sources');
-        if (old) old.remove();
-        let html;
-        if (data.has_evidence) {
-            const ev = data.evidence || [];
-            html = '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;font-size:12px;color:#374151;">' +
-                '<div style="font-weight:600;color:#15803d;">📚 回答依据（' + ev.length + '）</div>' +
-                (ev.map(function (e, i) {
-                    return '<div style="margin-top:4px;">来源' + (i + 1) + '·' + (e.category || '门店知识') + '：' + (e.snippet || '').slice(0, 80) + '</div>';
-                }).join('')) +
-                '</div>';
-        } else {
-            html = '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:#78350f;">' +
-                '⚠️ 当前无足够可靠的门店依据，以上仅为参考，请以门店现场/工作人员信息为准。</div>';
-        }
-        msgEl.insertAdjacentHTML('beforeend', html);
-    } catch (e) { /* 来源加载失败不阻断对话 */ }
-}
-
-// 解析 SSE：按空行切块，事件名 + JSON data
-async function parseSSE(reader, onEvent) {
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, {stream: true});
-        let idx;
-        while ((idx = buffer.indexOf('\n\n')) >= 0) {
-            const block = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 2);
-            let eventName = 'message';
-            let dataStr = '';
-            for (const line of block.split('\n')) {
-                if (line.startsWith('event: ')) eventName = line.slice(7).trim();
-                else if (line.startsWith('data: ')) dataStr += line.slice(6);
+            function persistConversation(id) {
+                conversationId = id;
+                sessionStorage.setItem(TAB_KEY, id);
+                localStorage.setItem(LS_RECENT, id); // 仅导航提示
             }
-            if (dataStr) {
-                try { onEvent(eventName, JSON.parse(dataStr)); } catch (e) { /* 忽略坏包 */ }
+
+            async function ensureConversation() {
+                if (!conversationId) {
+                    const res = await fetch("/api/v1/conversations", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            user_id: "default_user",
+                            channel: "web",
+                        }),
+                    });
+                    if (!res.ok) throw new Error("创建会话失败: " + res.status);
+                    const data = await res.json();
+                    persistConversation(data.conversation_id);
+                }
+                return conversationId;
             }
-        }
-    }
-}
 
-// === H1：会话状态与错误恢复 ===
-// 在最后一条 bot 泡泡内追加错误 + 重试按钮（不污染布局）
-function renderError(message) {
-    if (!lastBotBubble) return;
-    hideTypingIndicator();
-    if (lastBotBubble.dataset.err) return; // 已显示过错误
-    const err = document.createElement('div');
-    err.className = 'bot-error';
-    err.style.marginTop = '8px';
-    err.textContent = '⚠️ ' + message;
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'retry-btn';
-    retry.textContent = '重试';
-    retry.style.cssText = 'margin-top:8px;padding:4px 12px;cursor:pointer;border:1px solid #ddd;border-radius:6px;background:#fff;color:#333;';
-    retry.onclick = function () { clearBubbleError(); doSend(); };
-    lastBotBubble.appendChild(err);
-    lastBotBubble.appendChild(retry);
-    lastBotBubble.dataset.err = '1';
-}
+            async function newConversation() {
+                // 新建会话：创建新标签页会话 ID（原会话保留在服务端，不清除）
+                conversationId = null;
+                sessionStorage.removeItem(TAB_KEY);
+                await ensureConversation();
+                const welcome = chatBox
+                    .querySelector(".message.bot")
+                    .cloneNode(true);
+                chatBox.innerHTML = "";
+                chatBox.appendChild(welcome);
+                lastBotBubble = null;
+                userInput.focus();
+            }
 
-function clearBubbleError() {
-    if (!lastBotBubble) return;
-    if (lastBotBubble.dataset.err) {
-        lastBotBubble.querySelectorAll('.bot-error,.retry-btn').forEach(function (n) { n.remove(); });
-        delete lastBotBubble.dataset.err;
-    }
-}
+            function addMessage(text, sender) {
+                const msgDiv = document.createElement("div");
+                msgDiv.className = "message " + sender;
+                const avatar = document.createElement("div");
+                avatar.className = "avatar";
+                avatar.innerHTML =
+                    sender === "user"
+                        ? '<i class="fas fa-user"></i>'
+                        : '<i class="fas fa-robot"></i>';
+                const bubble = document.createElement("div");
+                bubble.className = "bubble";
+                bubble.innerHTML = text.replace(/\n/g, "<br>");
+                msgDiv.appendChild(avatar);
+                msgDiv.appendChild(bubble);
+                chatBox.appendChild(msgDiv);
+                requestAnimationFrame(() =>
+                    chatBox.scrollTo({
+                        top: chatBox.scrollHeight,
+                        behavior: "smooth",
+                    }),
+                );
+                if (sender === "bot") lastBotBubble = bubble;
+            }
 
-// 单轮发送：复用 lastBotBubble 渲染 bot 输出；返回 'ok' 或 'error:消息'
-async function runTurn(text) {
-    const sendTurn = function () {
-        return fetch('/api/v1/conversations/' + conversationId + '/turns', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({message: text, user_id: 'default_user'})
-        });
-    };
-    await ensureConversation();
-    let res = await sendTurn();
-    // 会话不存在（404）：重新建会话并重发一次（演示场景允许）
-    if (res.status === 404) {
-        conversationId = null;
-        sessionStorage.removeItem(TAB_KEY);
-        await ensureConversation();
-        res = await sendTurn();
-    }
-    // 归属/权限不符（403）：不静默重建掩盖错误
-    if (res.status === 403) return 'error:会话归属校验失败，请新建会话';
-    if (res.status === 422) return 'error:输入无效，请检查消息内容';
-    if (!res.ok || !res.body) return 'error:服务暂时不可用（' + res.status + '）';
-    hideTypingIndicator();
-    let botMsg = '';
-    let failed = false;
-    let failMsg = '';
-    await parseSSE(res.body.getReader(), function (eventName, data) {
-        if (eventName === 'assistant_delta' && data.text) {
-            botMsg += data.text;
-            updateLastBotMessage(botMsg);
-            if (/我已记住|这条偏好|已删除|无法保存/.test(data.text)) markLastBotMessage('memory-feedback');
-        } else if (eventName === 'run_failed') {
-            // 稳定错误展示（事件流内失败），不渲染内部异常细节
-            failed = true;
-            failMsg = data.message || '处理失败，请稍后再试';
-            updateLastBotMessage(botMsg + '\n' + failMsg);
-        } else if (eventName === 'run_completed') {
-            loadTurnSources(conversationId);
-            loadAppointmentStatus();
-        }
-    });
-    if (failed) return 'error:' + failMsg;
-    updateLastBotMessage(botMsg);
-    return 'ok';
-}
+            function showTypingIndicator() {
+                typingIndicator.style.display = "block";
+                requestAnimationFrame(() =>
+                    chatBox.scrollTo({
+                        top: chatBox.scrollHeight,
+                        behavior: "smooth",
+                    }),
+                );
+            }
+            function hideTypingIndicator() {
+                typingIndicator.style.display = "none";
+            }
 
-// 发送管道：新消息或重试共用
-async function doSend() {
-    if (!pending || connectionStatus === 'sending') return;
-    const text = pending.text;
-    clearBubbleError();
-    connectionStatus = 'sending';
-    const sendBtn = document.getElementById('send-btn');
-    sendBtn.disabled = true;
-    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 发送中...';
-    showTypingIndicator();
-    try {
-        const outcome = await runTurn(text);
-        if (outcome !== 'ok' && outcome.indexOf('error:') === 0) {
-            renderError(outcome.slice('error:'.length));
-        }
-    } finally {
-        connectionStatus = 'idle';
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
-        userInput.focus();
-    }
-}
+            function updateLastBotMessage(text) {
+                if (!lastBotBubble) return;
+                const reply = document.createElement("div");
+                const normalized = text || "";
+                if (
+                    normalized.indexOf("预约成功") >= 0 ||
+                    normalized.indexOf("已为您预约") >= 0
+                ) {
+                    reply.className = "bot-success";
+                    reply.textContent = "✅ " + normalized;
+                } else if (
+                    normalized.indexOf("抱歉") >= 0 ||
+                    normalized.indexOf("失败") >= 0 ||
+                    normalized.indexOf("不空闲") >= 0
+                ) {
+                    reply.className = "bot-error";
+                    reply.textContent = "❌ " + normalized;
+                } else if (
+                    normalized.indexOf("请问") >= 0 ||
+                    normalized.indexOf("需要") >= 0
+                ) {
+                    reply.className = "bot-info";
+                    reply.textContent = "💬 " + normalized;
+                } else {
+                    reply.className = "bot-reply";
+                    reply.textContent = normalized;
+                }
+                lastBotBubble.replaceChildren(reply);
+                requestAnimationFrame(() =>
+                    chatBox.scrollTo({
+                        top: chatBox.scrollHeight,
+                        behavior: "smooth",
+                    }),
+                );
+            }
 
-chatForm.onsubmit = function (e) {
-    e.preventDefault();
-    const text = userInput.value.trim();
-    if (!text) return;
-    pending = {text};
-    addMessage(text, 'user');
-    userInput.value = '';
-    addMessage('', 'bot');
-    lastBotBubble = chatBox.querySelector('.message.bot:last-child .bubble');
-    doSend();
-};
+            function markLastBotMessage(markerClass) {
+                if (!lastBotBubble) return;
+                const reply =
+                    lastBotBubble.querySelector("div:last-child") ||
+                    lastBotBubble;
+                if (reply && !reply.classList.contains(markerClass))
+                    reply.classList.add(markerClass);
+            }
 
-clearBtn.onclick = function () {
-    newConversation();
-};
+            // F6：渲染最近一条回答的来源卡片/无依据提示（从服务端读取，不伪造）
+            async function loadTurnSources(convId) {
+                if (!lastBotBubble) return;
+                try {
+                    const res = await fetch(
+                        "/api/v1/conversations/" + convId + "/sources",
+                    );
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const msgEl = lastBotBubble.closest(".message");
+                    if (!msgEl) return;
+                    const old = msgEl.querySelector(".answer-sources");
+                    if (old) old.remove();
+                    let html;
+                    if (data.has_evidence) {
+                        const ev = data.evidence || [];
+                        html =
+                            '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;font-size:12px;color:#374151;">' +
+                            '<div style="font-weight:600;color:#15803d;">📚 回答依据（' +
+                            ev.length +
+                            "）</div>" +
+                            ev
+                                .map(function (e, i) {
+                                    return (
+                                        '<div style="margin-top:4px;">来源' +
+                                        (i + 1) +
+                                        "·" +
+                                        (e.category || "门店知识") +
+                                        "：" +
+                                        (e.snippet || "").slice(0, 80) +
+                                        "</div>"
+                                    );
+                                })
+                                .join("") +
+                            "</div>";
+                    } else {
+                        html =
+                            '<div class="answer-sources" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:#78350f;">' +
+                            "⚠️ 当前无足够可靠的门店依据，以上仅为参考，请以门店现场/工作人员信息为准。</div>";
+                    }
+                    msgEl.insertAdjacentHTML("beforeend", html);
+                } catch (e) {
+                    /* 来源加载失败不阻断对话 */
+                }
+            }
 
-userInput.addEventListener('keypress', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        chatForm.dispatchEvent(new Event('submit'));
-    }
-});
+            // 解析 SSE：按空行切块，事件名 + JSON data
+            async function parseSSE(reader, onEvent) {
+                const decoder = new TextDecoder();
+                let buffer = "";
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let idx;
+                    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+                        const block = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 2);
+                        let eventName = "message";
+                        let dataStr = "";
+                        for (const line of block.split("\n")) {
+                            if (line.startsWith("event: "))
+                                eventName = line.slice(7).trim();
+                            else if (line.startsWith("data: "))
+                                dataStr += line.slice(6);
+                        }
+                        if (dataStr) {
+                            try {
+                                onEvent(eventName, JSON.parse(dataStr));
+                            } catch (e) {
+                                /* 忽略坏包 */
+                            }
+                        }
+                    }
+                }
+            }
 
-// 刷新恢复：从服务端读取当前会话历史（不把本地缓存当作事实来源）
-async function restoreFromServer() {
-    if (!conversationId) return;
-    try {
-        const res = await fetch('/api/v1/conversations/' + conversationId + '?user_id=default_user');
-        if (res.status === 404) {
-            conversationId = null;
-            sessionStorage.removeItem(TAB_KEY);
-            await ensureConversation();
-            return;
-        }
-        if (res.status === 403) {
-            conversationId = null;
-            sessionStorage.removeItem(TAB_KEY);
-            await ensureConversation();
-            return;
-        }
-        if (!res.ok) return; // 暂无法恢复：保留欢迎，不伪造成功
-        const data = await res.json();
-        const welcome = chatBox.querySelector('.message.bot').cloneNode(true);
-        chatBox.innerHTML = '';
-        chatBox.appendChild(welcome);
-        lastBotBubble = null;
-        const msgs = data.messages || [];
-        for (const m of msgs) {
-            if (m.role === 'user') addMessage(m.content, 'user');
-            else if (m.role === 'assistant' && m.content) addMessage(m.content, 'bot');
-        }
-    } catch (e) { /* 网络错误：保留欢迎，不伪造 */ }
-}
+            // === H1：会话状态与错误恢复 ===
+            // 在最后一条 bot 泡泡内追加错误 + 重试按钮（不污染布局）
+            function renderError(message) {
+                if (!lastBotBubble) return;
+                hideTypingIndicator();
+                if (lastBotBubble.dataset.err) return; // 已显示过错误
+                const err = document.createElement("div");
+                err.className = "bot-error";
+                err.style.marginTop = "8px";
+                err.textContent = "⚠️ " + message;
+                const retry = document.createElement("button");
+                retry.type = "button";
+                retry.className = "retry-btn";
+                retry.textContent = "重试";
+                retry.style.cssText =
+                    "margin-top:8px;padding:4px 12px;cursor:pointer;border:1px solid #ddd;border-radius:6px;background:#fff;color:#333;";
+                retry.onclick = function () {
+                    clearBubbleError();
+                    doSend();
+                };
+                lastBotBubble.appendChild(err);
+                lastBotBubble.appendChild(retry);
+                lastBotBubble.dataset.err = "1";
+            }
 
-window.addEventListener('load', function () {
-    restoreFromServer().then(function () { loadAppointmentStatus(); });
-    userInput.focus();
-});
+            function clearBubbleError() {
+                if (!lastBotBubble) return;
+                if (lastBotBubble.dataset.err) {
+                    lastBotBubble
+                        .querySelectorAll(".bot-error,.retry-btn")
+                        .forEach(function (n) {
+                            n.remove();
+                        });
+                    delete lastBotBubble.dataset.err;
+                }
+            }
 
-    
+            // 单轮发送：复用 lastBotBubble 渲染 bot 输出；返回 'ok' 或 'error:消息'
+            async function runTurn(text) {
+                const sendTurn = function () {
+                    return fetch(
+                        "/api/v1/conversations/" + conversationId + "/turns",
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                message: text,
+                                user_id: "default_user",
+                            }),
+                        },
+                    );
+                };
+                await ensureConversation();
+                let res = await sendTurn();
+                // 会话不存在（404）：重新建会话并重发一次（演示场景允许）
+                if (res.status === 404) {
+                    conversationId = null;
+                    sessionStorage.removeItem(TAB_KEY);
+                    await ensureConversation();
+                    res = await sendTurn();
+                }
+                // 归属/权限不符（403）：不静默重建掩盖错误
+                if (res.status === 403)
+                    return "error:会话归属校验失败，请新建会话";
+                if (res.status === 422) return "error:输入无效，请检查消息内容";
+                if (!res.ok || !res.body)
+                    return "error:服务暂时不可用（" + res.status + "）";
+                hideTypingIndicator();
+                let botMsg = "";
+                let failed = false;
+                let failMsg = "";
+                await parseSSE(
+                    res.body.getReader(),
+                    function (eventName, data) {
+                        if (eventName === "assistant_delta" && data.text) {
+                            botMsg += data.text;
+                            updateLastBotMessage(botMsg);
+                            if (
+                                /我已记住|这条偏好|已删除|无法保存/.test(
+                                    data.text,
+                                )
+                            )
+                                markLastBotMessage("memory-feedback");
+                        } else if (eventName === "run_failed") {
+                            // 稳定错误展示（事件流内失败），不渲染内部异常细节
+                            failed = true;
+                            failMsg = data.message || "处理失败，请稍后再试";
+                            updateLastBotMessage(botMsg + "\n" + failMsg);
+                        } else if (eventName === "run_completed") {
+                            loadTurnSources(conversationId);
+                            loadAppointmentStatus();
+                        }
+                    },
+                );
+                if (failed) return "error:" + failMsg;
+                updateLastBotMessage(botMsg);
+                return "ok";
+            }
 
-// === Phase H H2：买家预约主路径卡片 ===
-let appointmentCard = null;
+            // 发送管道：新消息或重试共用
+            async function doSend() {
+                if (!pending || connectionStatus === "sending") return;
+                const text = pending.text;
+                clearBubbleError();
+                connectionStatus = "sending";
+                const sendBtn = document.getElementById("send-btn");
+                sendBtn.disabled = true;
+                sendBtn.innerHTML =
+                    '<i class="fas fa-spinner fa-spin"></i> 发送中...';
+                showTypingIndicator();
+                try {
+                    const outcome = await runTurn(text);
+                    if (outcome !== "ok" && outcome.indexOf("error:") === 0) {
+                        renderError(outcome.slice("error:".length));
+                    }
+                } finally {
+                    connectionStatus = "idle";
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML =
+                        '<i class="fas fa-paper-plane"></i> 发送';
+                    userInput.focus();
+                }
+            }
 
-function ensureAppointmentCard() {
-    if (appointmentCard) return appointmentCard;
-    appointmentCard = document.createElement('div');
-    appointmentCard.id = 'appointment-card';
-    appointmentCard.style.cssText = 'margin:0 16px 10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font-size:13px;';
-    const box = document.getElementById('chat-box');
-    box.parentNode.insertBefore(appointmentCard, box);
-    return appointmentCard;
-}
+            chatForm.onsubmit = function (e) {
+                e.preventDefault();
+                const text = userInput.value.trim();
+                if (!text) return;
+                pending = { text };
+                addMessage(text, "user");
+                userInput.value = "";
+                addMessage("", "bot");
+                lastBotBubble = chatBox.querySelector(
+                    ".message.bot:last-child .bubble",
+                );
+                doSend();
+            };
 
-function escHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
-    });
-}
+            clearBtn.onclick = function () {
+                newConversation();
+            };
 
-const APPT_LABEL = {draft: '待补全', pending_confirmation: '待确认', confirmed: '已确认', cancelled: '已取消', expired: '已过期'};
+            userInput.addEventListener("keypress", function (e) {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    chatForm.dispatchEvent(new Event("submit"));
+                }
+            });
 
-async function loadAppointmentStatus() {
-    if (!conversationId) return;
-    const card = ensureAppointmentCard();
-    try {
-        const res = await fetch('/api/v1/conversations/' + conversationId + '/appointment');
-        if (!res.ok) { card.innerHTML = '<div style="color:#999;">预约状态加载失败</div>'; return; }
-        const data = await res.json();
-        const active = data.active, recent = data.recent;
-        if (!active && !recent) { card.innerHTML = '<div style="color:#999;">当前暂无预约</div>'; return; }
-        const item = active || recent;
-        const status = APPT_LABEL[item.status] || item.status;
-        const when = item.start_time ? escHtml(item.start_time.replace('T', ' ').slice(0, 16)) : '待定';
-        let html = '<div style="font-weight:600;color:#333;">📅 当前预约 <span style="font-weight:400;color:#888;">#' + escHtml(item.id) + '</span></div>';
-        html += '<div style="margin-top:6px;line-height:1.7;">';
-        html += '<div>服务项目：' + escHtml(item.project || '—') + '</div>';
-        if (item.technician_id) html += '<div>服务人员：#' + escHtml(item.technician_id) + '</div>';
-        html += '<div>开始时间：' + when + '　·　状态：<b>' + escHtml(status) + '</b></div>';
-        html += '</div>';
-        if (item.status === 'pending_confirmation') {
-            html += '<div style="margin-top:8px;"><button type="button" data-act="confirm" data-id="' + escHtml(item.id) + '" style="padding:5px 14px;cursor:pointer;border:1px solid #10b981;background:#10b981;color:#fff;border-radius:6px;">确认预约</button></div>';
-        } else if (item.status === 'confirmed') {
-            html += '<div style="margin-top:8px;"><button type="button" data-act="cancel" data-id="' + escHtml(item.id) + '" style="padding:5px 14px;cursor:pointer;border:1px solid #ef4444;background:#fff;color:#ef4444;border-radius:6px;">取消预约</button></div>';
-        }
-        card.innerHTML = html;
-        const btn = card.querySelector('button[data-act]');
-        if (btn) btn.onclick = function () { performAppointmentAction(btn.dataset.act, btn.dataset.id, btn); };
-    } catch (e) {
-        card.innerHTML = '<div style="color:#999;">预约状态加载失败</div>';
-    }
-}
+            // 刷新恢复：从服务端读取当前会话历史（不把本地缓存当作事实来源）
+            async function restoreFromServer() {
+                if (!conversationId) return;
+                try {
+                    const res = await fetch(
+                        "/api/v1/conversations/" +
+                            conversationId +
+                            "?user_id=default_user",
+                    );
+                    if (res.status === 404) {
+                        conversationId = null;
+                        sessionStorage.removeItem(TAB_KEY);
+                        await ensureConversation();
+                        return;
+                    }
+                    if (res.status === 403) {
+                        conversationId = null;
+                        sessionStorage.removeItem(TAB_KEY);
+                        await ensureConversation();
+                        return;
+                    }
+                    if (!res.ok) return; // 暂无法恢复：保留欢迎，不伪造成功
+                    const data = await res.json();
+                    const welcome = chatBox
+                        .querySelector(".message.bot")
+                        .cloneNode(true);
+                    chatBox.innerHTML = "";
+                    chatBox.appendChild(welcome);
+                    lastBotBubble = null;
+                    const msgs = data.messages || [];
+                    for (const m of msgs) {
+                        if (m.role === "user") addMessage(m.content, "user");
+                        else if (m.role === "assistant" && m.content)
+                            addMessage(m.content, "bot");
+                    }
+                } catch (e) {
+                    /* 网络错误：保留欢迎，不伪造 */
+                }
+            }
 
-async function performAppointmentAction(act, id, btn) {
-    if (!btn) return;
-    const OLD = btn.innerHTML;
-    btn.disabled = true;
-    btn.textContent = '处理中...';
-    const idem = 'h2:' + act + ':' + id + ':' + (conversationId || '');
-    try {
-        const res = await fetch('/api/v1/appointments/' + id + '/' + act, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({user_id: 'default_user', idempotency_key: idem})
-        });
-        if (!res.ok) {
-            let msg = '操作失败';
-            try { msg = (await res.json()).detail.message || msg; } catch (e) { /* keep */ }
-            btn.innerHTML = OLD;
-            btn.disabled = false;
-            const m = document.createElement('div');
-            m.style.cssText = 'margin-top:6px;color:#dc2626;';
-            m.textContent = '⚠️ ' + msg;
-            btn.parentNode.appendChild(m);
-            return;
-        }
-        await loadAppointmentStatus();
-    } catch (e) {
-        btn.innerHTML = OLD;
-        btn.disabled = false;
-        const m = document.createElement('div');
-        m.style.cssText = 'margin-top:6px;color:#dc2626;';
-        m.textContent = '⚠️ 服务暂时不可用，请稍后重试';
-        btn.parentNode.appendChild(m);
-    }
-}
+            window.addEventListener("load", function () {
+                restoreFromServer().then(function () {
+                    loadAppointmentStatus();
+                });
+                userInput.focus();
+            });
 
-// 刷新后恢复预约卡片（等会话恢复完成后）
+            // === Phase H H2：买家预约主路径卡片 ===
+            let appointmentCard = null;
 
-    </script>
-</body>
+            function ensureAppointmentCard() {
+                if (appointmentCard) return appointmentCard;
+                appointmentCard = document.createElement("div");
+                appointmentCard.id = "appointment-card";
+                appointmentCard.style.cssText =
+                    "margin:0 16px 10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;font-size:13px;";
+                const box = document.getElementById("chat-box");
+                box.parentNode.insertBefore(appointmentCard, box);
+                return appointmentCard;
+            }
+
+            function escHtml(s) {
+                return String(s == null ? "" : s).replace(
+                    /[&<>"]/g,
+                    function (c) {
+                        return {
+                            "&": "&amp;",
+                            "<": "&lt;",
+                            ">": "&gt;",
+                            '"': "&quot;",
+                        }[c];
+                    },
+                );
+            }
+
+            const APPT_LABEL = {
+                draft: "待补全",
+                pending_confirmation: "待确认",
+                confirmed: "已确认",
+                cancelled: "已取消",
+                expired: "已过期",
+            };
+
+            async function loadAppointmentStatus() {
+                if (!conversationId) return;
+                const card = ensureAppointmentCard();
+                try {
+                    const res = await fetch(
+                        "/api/v1/conversations/" +
+                            conversationId +
+                            "/appointment",
+                    );
+                    if (!res.ok) {
+                        card.innerHTML =
+                            '<div style="color:#999;">预约状态加载失败</div>';
+                        return;
+                    }
+                    const data = await res.json();
+                    const active = data.active,
+                        recent = data.recent;
+                    if (!active && !recent) {
+                        card.innerHTML =
+                            '<div style="color:#999;">当前暂无预约</div>';
+                        return;
+                    }
+                    const item = active || recent;
+                    const status = APPT_LABEL[item.status] || item.status;
+                    const when = item.start_time
+                        ? escHtml(
+                              item.start_time.replace("T", " ").slice(0, 16),
+                          )
+                        : "待定";
+                    let html =
+                        '<div style="font-weight:600;color:#333;">📅 当前预约 <span style="font-weight:400;color:#888;">#' +
+                        escHtml(item.id) +
+                        "</span></div>";
+                    html += '<div style="margin-top:6px;line-height:1.7;">';
+                    html +=
+                        "<div>服务项目：" +
+                        escHtml(item.project || "—") +
+                        "</div>";
+                    if (item.technician_id)
+                        html +=
+                            "<div>服务人员：#" +
+                            escHtml(item.technician_id) +
+                            "</div>";
+                    html +=
+                        "<div>开始时间：" +
+                        when +
+                        "　·　状态：<b>" +
+                        escHtml(status) +
+                        "</b></div>";
+                    html += "</div>";
+                    if (item.status === "pending_confirmation") {
+                        html +=
+                            '<div style="margin-top:8px;"><button type="button" data-act="confirm" data-id="' +
+                            escHtml(item.id) +
+                            '" style="padding:5px 14px;cursor:pointer;border:1px solid #10b981;background:#10b981;color:#fff;border-radius:6px;">确认预约</button></div>';
+                    } else if (item.status === "confirmed") {
+                        html +=
+                            '<div style="margin-top:8px;"><button type="button" data-act="cancel" data-id="' +
+                            escHtml(item.id) +
+                            '" style="padding:5px 14px;cursor:pointer;border:1px solid #ef4444;background:#fff;color:#ef4444;border-radius:6px;">取消预约</button></div>';
+                    }
+                    card.innerHTML = html;
+                    const btn = card.querySelector("button[data-act]");
+                    if (btn)
+                        btn.onclick = function () {
+                            performAppointmentAction(
+                                btn.dataset.act,
+                                btn.dataset.id,
+                                btn,
+                            );
+                        };
+                } catch (e) {
+                    card.innerHTML =
+                        '<div style="color:#999;">预约状态加载失败</div>';
+                }
+            }
+
+            async function performAppointmentAction(act, id, btn) {
+                if (!btn) return;
+                const OLD = btn.innerHTML;
+                btn.disabled = true;
+                btn.textContent = "处理中...";
+                const idem =
+                    "h2:" + act + ":" + id + ":" + (conversationId || "");
+                try {
+                    const res = await fetch(
+                        "/api/v1/appointments/" + id + "/" + act,
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                user_id: "default_user",
+                                idempotency_key: idem,
+                            }),
+                        },
+                    );
+                    if (!res.ok) {
+                        let msg = "操作失败";
+                        try {
+                            msg = (await res.json()).detail.message || msg;
+                        } catch (e) {
+                            /* keep */
+                        }
+                        btn.innerHTML = OLD;
+                        btn.disabled = false;
+                        const m = document.createElement("div");
+                        m.style.cssText = "margin-top:6px;color:#dc2626;";
+                        m.textContent = "⚠️ " + msg;
+                        btn.parentNode.appendChild(m);
+                        return;
+                    }
+                    await loadAppointmentStatus();
+                } catch (e) {
+                    btn.innerHTML = OLD;
+                    btn.disabled = false;
+                    const m = document.createElement("div");
+                    m.style.cssText = "margin-top:6px;color:#dc2626;";
+                    m.textContent = "⚠️ 服务暂时不可用，请稍后重试";
+                    btn.parentNode.appendChild(m);
+                }
+            }
+
+            // 刷新后恢复预约卡片（等会话恢复完成后）
+        </script>
+    </body>
 </html>

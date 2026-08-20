@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>商家登录 · AI Front Desk</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        color: #172033;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #eef2f6;
+      }
+      main {
+        width: min(420px, calc(100% - 40px));
+        background: #fff;
+        border: 1px solid #dce3eb;
+        padding: 32px;
+        box-shadow: 0 12px 30px #17203318;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      p {
+        color: #667085;
+        margin: 0 0 24px;
+      }
+      label {
+        display: block;
+        margin: 16px 0 6px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px;
+        border: 1px solid #cbd5e1;
+        font-size: 16px;
+      }
+      button {
+        width: 100%;
+        margin-top: 24px;
+        padding: 12px;
+        border: 0;
+        background: #172033;
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      #error {
+        min-height: 22px;
+        margin-top: 14px;
+        color: #b42318;
+      }
+      a {
+        color: #315bdc;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>商家后台登录</h1>
+      <p>登录后管理门店知识、服务人员、排班和客户会话。</p>
+      <form id="login-form">
+        <label for="username">账号</label>
+        <input id="username" name="username" autocomplete="username" required />
+        <label for="password">密码</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <button id="submit" type="submit">登录后台</button>
+        <div id="error" role="alert"></div>
+      </form>
+      <a href="http://127.0.0.1:8001/">返回买家端</a>
+    </main>
+    <script>
+      const form = document.getElementById("login-form");
+      const button = document.getElementById("submit");
+      const error = document.getElementById("error");
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        button.disabled = true;
+        error.textContent = "";
+        try {
+          const response = await fetch("/api/v1/admin/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              username: document.getElementById("username").value.trim(),
+              password: document.getElementById("password").value,
+            }),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.detail?.message || "账号或密码错误");
+          }
+          window.location.replace(
+            new URL("/admin", window.location.origin).href,
+          );
+        } catch (err) {
+          error.textContent = err.message || "登录失败，请稍后重试";
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

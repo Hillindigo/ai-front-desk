@@ -1,0 +1,30 @@
+[
+  {
+    "title": "营业时间",
+    "category": "门店信息",
+    "content": "门店每天09:00-22:00营业，周六营业至23:00。",
+    "keywords": "营业时间,开门,几点",
+    "status": "published"
+  },
+  {
+    "title": "服务价格",
+    "category": "服务项目",
+    "content": "肩颈放松80元/30分钟，基础全身放松160元/60分钟，足部舒缓100元/45分钟，深度放松220元/90分钟。",
+    "keywords": "项目,价格,服务",
+    "status": "published"
+  },
+  {
+    "title": "预约规则",
+    "category": "预约政策",
+    "content": "预约至少提前2小时提交；取消或改期请至少提前2小时联系门店。",
+    "keywords": "预约,取消,改期",
+    "status": "published"
+  },
+  {
+    "title": "服务说明",
+    "category": "服务项目",
+    "content": "肩颈放松适合久坐、伏案和肩颈紧张人群，具体体验以服务人员现场判断为准。",
+    "keywords": "肩颈,久坐,放松",
+    "status": "published"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "beauty_customer_001",
+    "display_name": "王女士",
+    "phone": "13900002001",
+    "notes": "关注补水护理，倾向周末上午"
+  },
+  {
+    "user_id": "beauty_customer_002",
+    "display_name": "赵女士",
+    "phone": "13900002002",
+    "notes": "肌肤容易敏感，预约前希望先咨询"
+  }
+]

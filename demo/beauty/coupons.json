@@ -1,0 +1,22 @@
+[
+  {
+    "coupon_code": "BEAUTY-NEW80",
+    "name": "新客护理券",
+    "discount_type": "fixed",
+    "discount_value": 80,
+    "min_spend_yuan": 198,
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "status": "active"
+  },
+  {
+    "coupon_code": "BEAUTY-OFF15",
+    "name": "会员护理折扣",
+    "discount_type": "percent",
+    "discount_value": 15,
+    "min_spend_yuan": 200,
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "status": "active"
+  }
+]

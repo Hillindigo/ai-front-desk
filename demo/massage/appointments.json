@@ -1,0 +1,20 @@
+[
+  {
+    "appointment_id": "massage-appt-001",
+    "user_id": "massage_customer_001",
+    "service_code": "MASSAGE-001",
+    "staff_code": "M-STAFF-001",
+    "start_time": "2026-09-01 15:00",
+    "duration_minutes": 30,
+    "status": "confirmed"
+  },
+  {
+    "appointment_id": "massage-appt-002",
+    "user_id": "massage_customer_002",
+    "service_code": "MASSAGE-004",
+    "staff_code": "M-STAFF-002",
+    "start_time": "2026-09-02 19:00",
+    "duration_minutes": 90,
+    "status": "pending_confirmation"
+  }
+]

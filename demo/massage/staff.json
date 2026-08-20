@@ -1,0 +1,23 @@
+[
+  {
+    "staff_code": "M-STAFF-001",
+    "name": "林晓",
+    "gender": "女",
+    "specialty": "肩颈放松、精油护理",
+    "is_active": 1
+  },
+  {
+    "staff_code": "M-STAFF-002",
+    "name": "陈安",
+    "gender": "男",
+    "specialty": "足部舒缓、深度放松",
+    "is_active": 1
+  },
+  {
+    "staff_code": "M-STAFF-003",
+    "name": "周宁",
+    "gender": "女",
+    "specialty": "基础全身放松、肩颈放松",
+    "is_active": 1
+  }
+]

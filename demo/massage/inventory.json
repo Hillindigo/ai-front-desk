@@ -1,0 +1,29 @@
+[
+  {
+    "inventory_code": "M-INV-001",
+    "name": "按摩精油",
+    "unit": "瓶",
+    "quantity": 24,
+    "reorder_level": 8,
+    "unit_cost_yuan": 68,
+    "is_active": 1
+  },
+  {
+    "inventory_code": "M-INV-002",
+    "name": "一次性床单",
+    "unit": "包",
+    "quantity": 60,
+    "reorder_level": 20,
+    "unit_cost_yuan": 35,
+    "is_active": 1
+  },
+  {
+    "inventory_code": "M-INV-003",
+    "name": "热敷毛巾",
+    "unit": "条",
+    "quantity": 80,
+    "reorder_level": 30,
+    "unit_cost_yuan": 12,
+    "is_active": 1
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "staff_code": "B-STAFF-001",
+    "work_date": "2026-09-05",
+    "start_time": "09:30",
+    "end_time": "17:30",
+    "status": "working",
+    "note": "周末早班"
+  },
+  {
+    "staff_code": "B-STAFF-002",
+    "work_date": "2026-09-05",
+    "start_time": "11:00",
+    "end_time": "19:00",
+    "status": "working",
+    "note": "基础护理主班"
+  },
+  {
+    "staff_code": "B-STAFF-003",
+    "work_date": "2026-09-05",
+    "start_time": "13:00",
+    "end_time": "21:30",
+    "status": "working",
+    "note": "敏感肌修护主班"
+  }
+]

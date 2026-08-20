@@ -1,0 +1,38 @@
+[
+  {
+    "service_code": "BEAUTY-001",
+    "name": "基础清洁护理",
+    "price_yuan": 128,
+    "duration_minutes": 60,
+    "description": "日常清洁、补水和基础护理",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "BEAUTY-002",
+    "name": "深层补水护理",
+    "price_yuan": 198,
+    "duration_minutes": 75,
+    "description": "适合干燥肌肤的深层补水项目",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "BEAUTY-003",
+    "name": "肩颈舒缓护理",
+    "price_yuan": 168,
+    "duration_minutes": 60,
+    "description": "面部护理结合肩颈放松",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "BEAUTY-004",
+    "name": "敏感肌修护",
+    "price_yuan": 268,
+    "duration_minutes": 90,
+    "description": "针对敏感状态肌肤的温和修护护理",
+    "is_bookable": 1,
+    "is_active": 1
+  }
+]

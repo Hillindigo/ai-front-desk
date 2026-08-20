@@ -1,0 +1,38 @@
+[
+  {
+    "service_code": "MASSAGE-001",
+    "name": "肩颈放松",
+    "price_yuan": 80,
+    "duration_minutes": 30,
+    "description": "适合久坐和伏案人群的舒缓项目",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "MASSAGE-002",
+    "name": "基础全身放松",
+    "price_yuan": 160,
+    "duration_minutes": 60,
+    "description": "全身基础放松护理",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "MASSAGE-003",
+    "name": "足部舒缓",
+    "price_yuan": 100,
+    "duration_minutes": 45,
+    "description": "足部舒缓和日常放松",
+    "is_bookable": 1,
+    "is_active": 1
+  },
+  {
+    "service_code": "MASSAGE-004",
+    "name": "深度放松",
+    "price_yuan": 220,
+    "duration_minutes": 90,
+    "description": "更完整的全身放松体验",
+    "is_bookable": 1,
+    "is_active": 1
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "conversation_id": "beauty-conv-001",
+    "user_id": "beauty_customer_001",
+    "subject": "补水咨询",
+    "user_message": "干燥肌适合什么项目？",
+    "assistant_message": "可以先了解深层补水护理，价格198元，时长75分钟。"
+  },
+  {
+    "conversation_id": "beauty-conv-002",
+    "user_id": "beauty_customer_002",
+    "subject": "敏感肌咨询",
+    "user_message": "敏感肌可以做护理吗？",
+    "assistant_message": "可以先进行肌肤状态沟通，再由服务人员确认合适的温和护理方案。"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "massage_customer_001",
+    "display_name": "张女士",
+    "phone": "13800001001",
+    "notes": "偏好下午时段，关注肩颈放松"
+  },
+  {
+    "user_id": "massage_customer_002",
+    "display_name": "李先生",
+    "phone": "13800001002",
+    "notes": "偏好男服务人员，曾预约深度放松"
+  }
+]

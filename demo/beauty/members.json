@@ -1,0 +1,20 @@
+[
+  {
+    "member_id": "B-MEMBER-001",
+    "user_id": "beauty_customer_001",
+    "level": "白金会员",
+    "points": 920,
+    "balance_yuan": 560,
+    "joined_at": "2026-02-08",
+    "status": "active"
+  },
+  {
+    "member_id": "B-MEMBER-002",
+    "user_id": "beauty_customer_002",
+    "level": "普通会员",
+    "points": 240,
+    "balance_yuan": 180,
+    "joined_at": "2026-05-11",
+    "status": "active"
+  }
+]

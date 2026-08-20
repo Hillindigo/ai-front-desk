@@ -1,0 +1,20 @@
+[
+  {
+    "payment_id": "beauty-pay-001",
+    "user_id": "beauty_customer_001",
+    "appointment_id": "beauty-appt-001",
+    "amount_yuan": 198,
+    "payment_method": "alipay",
+    "status": "paid",
+    "paid_at": "2026-09-05 10:20"
+  },
+  {
+    "payment_id": "beauty-pay-002",
+    "user_id": "beauty_customer_002",
+    "appointment_id": "beauty-appt-002",
+    "amount_yuan": 268,
+    "payment_method": "pending",
+    "status": "pending",
+    "paid_at": "2026-09-04 16:00"
+  }
+]

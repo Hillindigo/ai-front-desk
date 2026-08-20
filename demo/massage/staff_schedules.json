@@ -1,0 +1,26 @@
+[
+  {
+    "staff_code": "M-STAFF-001",
+    "work_date": "2026-09-01",
+    "start_time": "09:00",
+    "end_time": "17:00",
+    "status": "working",
+    "note": "下午重点安排肩颈项目"
+  },
+  {
+    "staff_code": "M-STAFF-002",
+    "work_date": "2026-09-01",
+    "start_time": "14:00",
+    "end_time": "22:00",
+    "status": "working",
+    "note": "晚班"
+  },
+  {
+    "staff_code": "M-STAFF-003",
+    "work_date": "2026-09-01",
+    "start_time": "09:00",
+    "end_time": "18:00",
+    "status": "working",
+    "note": "常规班"
+  }
+]

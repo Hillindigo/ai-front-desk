@@ -1,0 +1,22 @@
+[
+  {
+    "coupon_code": "MASSAGE-NEW50",
+    "name": "新客立减券",
+    "discount_type": "fixed",
+    "discount_value": 50,
+    "min_spend_yuan": 150,
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "status": "active"
+  },
+  {
+    "coupon_code": "MASSAGE-OFF10",
+    "name": "会员九折券",
+    "discount_type": "percent",
+    "discount_value": 10,
+    "min_spend_yuan": 100,
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "status": "active"
+  }
+]

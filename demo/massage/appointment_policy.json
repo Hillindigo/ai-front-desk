@@ -1,0 +1,7 @@
+[
+  {
+    "min_notice_minutes": 120,
+    "cancel_window_minutes": 120,
+    "late_rule": "迟到超过15分钟请先联系门店确认；取消或改期请至少提前2小时。"
+  }
+]
