@@ -7,7 +7,7 @@ Web界面路由
 import logging
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -200,15 +200,11 @@ async def admin_login_page(request: Request):
 
 
 @router.get("/admin", response_class=HTMLResponse, summary="系统管理页面")
-async def admin_dashboard(request: Request):
-    """系统管理仪表板；未登录时进入后台登录页。"""
-    from api.admin_auth import SESSION_COOKIE_NAME, get_admin_auth_service
-
-    identity = get_admin_auth_service().resolve_session(
-        request.cookies.get(SESSION_COOKIE_NAME)
-    )
-    if identity is None:
-        return RedirectResponse(url="/admin/login", status_code=303)
+async def admin_dashboard(
+    request: Request,
+    identity=Depends(get_current_admin),
+):
+    """系统管理仪表板；未登录时由统一认证依赖返回 401。"""
     try:
         from api.chat_handler import get_container
 
