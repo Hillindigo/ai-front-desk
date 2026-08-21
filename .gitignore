@@ -24,6 +24,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # --- Data & runtime artifacts ---
 data/
@@ -37,6 +38,12 @@ data/
 # --- Logs ---
 *.log
 logs/
+
+# --- Runtime process files ---
+*.pid
+
+# --- Accidental local Windows cache directory ---
+/%SystemDrive%/
 
 # --- Tests / coverage ---
 .pytest_cache/
